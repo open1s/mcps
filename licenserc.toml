@@ -15,47 +15,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-[package]
-name = "mcps"
-version = "0.1.0"
-edition = "2021"
-description = "Rust implementation of Anthropic's Model Context Protocol"
-authors = ["open1s"]
-license = "MIT"
-repository = "https://github.com/open1s/mcps.git"
-readme = "README.md"
-keywords = ["mcp", "anthropic", "claude", "ai", "llm"]
+headerPath = "license-header.txt"
 
+excludes = [
+    # Plain text files AS IS
+    "*.txt",
 
-[lib]
-name = "mcps"
-path = "src/lib.rs"
+    # Test files
+    "fmt/tests/content/**",
+    "tests/load_header_path/**",
 
-[[bin]]
-name = "mcps"
-path = "src/main.rs"
+    # Generated files
+    ".github/workflows/release.yml",
+]
 
-# Core dependencies for the mcpr library
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "2.0"
-dashmap = {version = "6.1", features = ["serde"]}
-xxhash-rust = { version = "0",features = ["xxh3", "const_xxh3"] }
-anyhow = "1.0"
-log = "0.4"
-env_logger = "0.10"
-clap = { version = "4.4", features = ["derive"] }
-tokio = { version = "1.35", features = ["full"] }
-async-trait = "0.1"
-futures = "0.3"
-url = "2.2.2" 
-tiny_http = "0.12"
-reqwest = { version = "0.12", features = [
-    "json",
-    "default-tls",
-    "blocking",
-] }
-rand = "0"
-tungstenite = { version = "0.20", features = ["native-tls"] }
-
+[properties]
+inceptionYear = 2025
+copyrightOwner = "open1s <gao.brian@gmail.com>"
