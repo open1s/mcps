@@ -14,6 +14,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+
 #![allow(unused)]
 
 use std::ops::DerefMut;
@@ -133,16 +134,16 @@ impl  Transport for StdioTransport {
         }
     }
 
-    fn receive_event(&mut self) -> Result<i32, MCPError> {
-        let evt = self.event_bus.make_reader().try_recv();
-        match evt {
-            Ok(evt) => Ok(evt),
-            Err(_) => {
-                let error = MCPError::Transport("Failed to receive event".to_string());
-                Err(error)
-            }
-        }
-    }
+    // fn receive_event(&mut self) -> Result<i32, MCPError> {
+    //     let evt = self.event_bus.make_reader().try_recv();
+    //     match evt {
+    //         Ok(evt) => Ok(evt),
+    //         Err(_) => {
+    //             let error = MCPError::Transport("Failed to receive event".to_string());
+    //             Err(error)
+    //         }
+    //     }
+    // }
 
     fn close(&mut self) -> Result<(), MCPError> {
         if !self.is_connected {

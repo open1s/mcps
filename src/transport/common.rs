@@ -80,7 +80,7 @@ pub trait Transport: Send + Sync {
     /// Receive a message
     fn receive<T: DeserializeOwned + Send + Sync>(&mut self) -> Result<T, MCPError>;
 
-    fn receive_event(&mut self) -> Result<i32, MCPError>;
+    // fn receive_event(&mut self) -> Result<i32, MCPError>;
 
     /// Close the connection
     fn close(&mut self) -> Result<(), MCPError>;
