@@ -26,7 +26,7 @@ use crate::support::ControlBus;
 
 /// Standard IO transport
 pub struct StdioTransport {
-    event_bus: ControlBus,
+    notify: ControlBus,
     provider: Box<dyn IoProvider + 'static>,
     is_connected: bool,
     on_close: Option<CloseCallback>,
@@ -38,7 +38,7 @@ impl StdioTransport {
     /// Create a new stdio transport using stdin and stdout
     pub fn new(provider: impl IoProvider + 'static) -> Self {
         Self {
-            event_bus: ControlBus::new(),
+            notify: ControlBus::new(),
             provider: Box::new(provider),
             is_connected: false,
             on_close: None,
