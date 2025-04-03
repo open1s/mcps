@@ -21,9 +21,11 @@ use std::sync::Arc;
 use crate::MCPError;
 use crate::transport::common::{CloseCallback, ErrorCallback, HeaderType, IoProvider, MessageCallback, PayLoad, Transport};
 use serde::{de::DeserializeOwned, Serialize};
+use crate::support::ControlBus;
 
 /// Standard IO transport
 pub struct StdioTransport {
+    event_bus: ControlBus,
     provider: Box<dyn IoProvider + 'static>,
     is_connected: bool,
     on_close: Option<CloseCallback>,
@@ -35,6 +37,7 @@ impl StdioTransport {
     /// Create a new stdio transport using stdin and stdout
     pub fn new(provider: impl IoProvider + 'static) -> Self {
         Self {
+            event_bus: ControlBus::new(),
             provider: Box::new(provider),
             is_connected: false,
             on_close: None,
@@ -55,7 +58,8 @@ impl StdioTransport {
 //     fn clone(&self) -> Self {
 //         // Create a new instance with its own reader but sharing the same writer channel
 //         StdioTransport {
-//             provider: self.provider,
+//             provider: self.provider.clone(),
+//             event_bus: self.event_bus.clone(),
 //             is_connected: self.is_connected,
 //             on_close: None,
 //             on_error: None,
@@ -124,6 +128,17 @@ impl  Transport for StdioTransport {
             Err(e) => {
                 let error = MCPError::Transport(format!("Failed to read: {}", e));
                 self.handle_error(&error);
+                Err(error)
+            }
+        }
+    }
+
+    fn receive_event(&mut self) -> Result<i32, MCPError> {
+        let evt = self.event_bus.make_reader().try_recv();
+        match evt {
+            Ok(evt) => Ok(evt),
+            Err(_) => {
+                let error = MCPError::Transport("Failed to receive event".to_string());
                 Err(error)
             }
         }

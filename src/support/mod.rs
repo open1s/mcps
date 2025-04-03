@@ -17,3 +17,5 @@
 
 pub mod help;
 pub mod definition;
+mod control_bus;
+pub use control_bus::ControlBus;
