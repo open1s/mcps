@@ -42,14 +42,14 @@ serde_json = "1.0"
 thiserror = "2.0"
 dashmap = {version = "6.1", features = ["serde"]}
 xxhash-rust = { version = "0",features = ["xxh3", "const_xxh3"] }
-anyhow = { version = "1.0" }
 disruptor = {version = "3.3"}
 lombok = { version = "0.4" }
+bus = { git = "https://github.com/open1s/bus.git" }
+
+anyhow = { version = "1.0" }
 log = "0.4"
 env_logger = "0.10"
 clap = { version = "4.4", features = ["derive"] }
-tokio = { version = "1.35", features = ["full"] }
-async-trait = "0.1"
 futures = "0.3"
 url = "2.2.2" 
 tiny_http = "0.12"
