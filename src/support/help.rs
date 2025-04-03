@@ -15,8 +15,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-pub mod schema;
-pub mod transport;
-pub mod support;
+use xxhash_rust::const_xxh3::xxh3_128;
 
-pub use support::definition::error::MCPError;
+pub fn str_to_u128(s: &str) -> u128 {
+    xxh3_128(s.as_bytes())
+}
+
+pub fn create_session_id(s: &str) -> u128 {
+    str_to_u128(s)
+}
