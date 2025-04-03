@@ -15,8 +15,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-pub mod schema;
-pub mod transport;
-pub mod support;
+pub mod error {
+    use thiserror::Error;
 
-pub use support::definition::error::MCPError;
+    #[derive(Error, Debug)]
+    pub enum MCPError {
+        #[error("JSON serialization error: {0}")]
+        Serialization(#[from] serde_json::Error),
+
+        #[error("Transport error: {0}")]
+        Transport(String),
+
+        #[error("Protocol error: {0}")]
+        Protocol(String),
+
+        #[error("Unsupported feature: {0}")]
+        UnsupportedFeature(String),
+
+        #[error("Timeout error: {0}")]
+        Timeout(String),
+    }
+}
+
+
+

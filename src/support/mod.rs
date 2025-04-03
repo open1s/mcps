@@ -15,8 +15,5 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-pub mod schema;
-pub mod transport;
-pub mod support;
-
-pub use support::definition::error::MCPError;
+pub mod help;
+pub mod definition;
