@@ -45,6 +45,7 @@ xxhash-rust = { version = "0",features = ["xxh3", "const_xxh3"] }
 disruptor = {version = "3.3"}
 lombok = { version = "0.4" }
 bus = { git = "https://github.com/open1s/bus.git" }
+memmap2 = "0.9"
 
 anyhow = { version = "1.0" }
 log = "0.4"

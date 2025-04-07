@@ -18,4 +18,6 @@
 pub mod help;
 pub mod definition;
 mod control_bus;
+mod shared_memory;
+
 pub use control_bus::ControlBus;
