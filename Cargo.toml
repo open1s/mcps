@@ -37,17 +37,24 @@ path = "src/main.rs"
 
 # Core dependencies for the mcpr library
 [dependencies]
+log = { version = "0.4"}
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
+anyhow = {version = "1.0" }
 dashmap = {version = "6.1", features = ["serde"]}
 xxhash-rust = { version = "0",features = ["xxh3", "const_xxh3"] }
 disruptor = {version = "3.3"}
 lombok = { version = "0.4" }
-bus = { git = "https://github.com/open1s/bus.git" }
+nbus = { version = "2.4" }
+bytes = {version = "1"}
+memmap2 = "0.9"
+ibag = { version = "0.3" }
+rioc = { version = "0.2" }
+iconfig = { version = "0.1" }
+irgo = { version = "0.2"}
+imacro = { version = "0.4" }
 
-anyhow = { version = "1.0" }
-log = "0.4"
 env_logger = "0.10"
 clap = { version = "4.4", features = ["derive"] }
 futures = "0.3"
@@ -61,4 +68,6 @@ reqwest = { version = "0.12", features = [
 rand = "0"
 tungstenite = { version = "0.20", features = ["native-tls"] }
 libc = "0.2.171"
+async-trait = "0.1.88"
+tokio = "1.44.1"
 

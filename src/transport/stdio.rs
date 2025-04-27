@@ -17,359 +17,105 @@
 
 #![allow(unused)]
 
-use std::ops::DerefMut;
-use std::sync::Arc;
+
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 use crate::MCPError;
-use crate::transport::common::{CloseCallback, ErrorCallback, HeaderType, IoProvider, MessageCallback, PayLoad, Transport};
-use serde::{de::DeserializeOwned, Serialize};
+use disruptor::{Producer, Sequence};
+use rioc::{Direction, Layer, LayerBuilder, LayerResult, PayLoad, SharedLayer};
 use crate::support::ControlBus;
+use crate::transport::disruptor::{DisruptorProcessorCallback, DisruptorWriter};
+use super::disruptor::DisruptorFactory;
+
 
 /// Standard IO transport
-pub struct StdioTransport {
-    notify: ControlBus,
-    provider: Box<dyn IoProvider + 'static>,
-    is_connected: bool,
-    on_close: Option<CloseCallback>,
-    on_error: Option<ErrorCallback>,
-    on_message: Option<MessageCallback>,
+pub struct StdioTransport{
+    control_bus: Arc<ControlBus>,
+    writer: DisruptorWriter,
 }
 
 impl StdioTransport {
-    /// Create a new stdio transport using stdin and stdout
-    pub fn new(provider: impl IoProvider + 'static) -> Self {
-        Self {
-            notify: ControlBus::new(),
-            provider: Box::new(provider),
-            is_connected: false,
-            on_close: None,
-            on_error: None,
-            on_message: None,
-        }
+    pub fn new() -> Self {
+        let disruptor = DisruptorFactory::create(Box::new(|e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
+            //write to stdout
+            println!("{:?}", e.data.clone().unwrap());
+        }));
+
+        StdioTransport {
+            control_bus: Arc::new(ControlBus::new()),
+            writer: disruptor
+       }
     }
 
-    fn handle_error(&self, error: &MCPError) {
-        if let Some(callback) = &self.on_error {
-            callback(error);
-        }
+    pub fn layer0_tx(&mut self, data: PayLoad) -> Result<(), MCPError> {
+        let data = data.data.clone().ok_or_else(|| 
+            MCPError::Transport("Payload data is None".to_string()))?;
+        
+        self.writer.publish(|e| {
+            e.data = Some(data);
+        });
+        Ok(())
+    }
+
+    pub fn layer0_rx(&self) -> Result<PayLoad, MCPError> {
+        //read from stdin
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)
+            .map_err(|e| MCPError::Transport(format!("Failed to read from stdin: {}", e)))?;
+        Ok(PayLoad {
+            data: Some(input),
+            ctx: None,
+        })
+    }
+
+    pub fn layer0(&self) -> SharedLayer {
+        let io = StdioTransport::new();
+        let io_cloned = Arc::new(RefCell::new(io));
+        let tx_io = io_cloned.clone();
+        let rx_io = io_cloned.clone();
+
+        let builder = LayerBuilder::new();
+        let layer = builder
+            .with_inbound_fn(move |req|{
+               let data =  rx_io.borrow_mut().layer0_rx();
+               Ok(LayerResult{
+                    direction: Direction::Inbound,
+                    data: Some(data.unwrap()),
+               })
+            })
+            .with_outbound_fn(move |req|{
+                if req.is_none(){
+                    return Err("no data to send".to_string());
+                }
+                let req = req.unwrap();
+                tx_io.borrow_mut().layer0_tx(req).unwrap();
+                Ok(LayerResult{
+                    direction: Direction::Outbound,
+                    data: None,
+                })
+            }).build();
+        return layer.unwrap();    
     }
 }
 
-// Implement Clone for StdioTransport
-// impl Clone for StdioTransport {
-//     fn clone(&self) -> Self {
-//         // Create a new instance with its own reader but sharing the same writer channel
-//         StdioTransport {
-//             provider: self.provider.clone(),
-//             event_bus: self.event_bus.clone(),
-//             is_connected: self.is_connected,
-//             on_close: None,
-//             on_error: None,
-//             on_message: None,
-//         }
-//     }
-// }
 
-impl  Transport for StdioTransport {
-    fn start(&mut self) -> Result<(), MCPError> {
-        if self.is_connected {
-            return Ok(());
-        }
 
-        self.is_connected = true;
-        Ok(())
-    }
 
-    fn send<T: Serialize + Send + Sync>(&mut self, message: &T) -> Result<(), MCPError> {
-        if !self.is_connected {
-            let error = MCPError::Transport("Transport not connected".to_string());
-            self.handle_error(&error);
-            return Err(error);
-        }
 
-        let json = match serde_json::to_string(message) {
-            Ok(json) => json,
-            Err(e) => {
-                let error = MCPError::Serialization(e);
-                self.handle_error(&error);
-                return Err(error);
-            }
-        };
-
-        let data = PayLoad  {
-            hdr: HeaderType::Data,
-            data: Some(json),
-        };
-
-        self.provider.write(&data).unwrap();
-        Ok(())
-    }
-
-    fn receive<T: DeserializeOwned + Send + Sync>(&mut self) -> Result<T, MCPError> {
-        if !self.is_connected {
-            let error = MCPError::Transport("Transport not connected".to_string());
-            self.handle_error(&error);
-            return Err(error);
-        }
-
-        match self.provider.read() {
-            Ok(payload) => {
-                if let Some(callback) = &self.on_message {
-                    callback(&payload.data.clone().unwrap());
-                }
-
-                match serde_json::from_str(payload.clone().data.unwrap().as_str()) {
-                    Ok(parsed) => Ok(parsed),
-                    Err(e) => {
-                        let error = MCPError::Serialization(e);
-                        self.handle_error(&error);
-                        Err(error)
-                    }
-                }
-            }
-            Err(e) => {
-                let error = MCPError::Transport(format!("Failed to read: {}", e));
-                self.handle_error(&error);
-                Err(error)
-            }
-        }
-    }
-
-    // fn receive_event(&mut self) -> Result<i32, MCPError> {
-    //     let evt = self.event_bus.make_reader().try_recv();
-    //     match evt {
-    //         Ok(evt) => Ok(evt),
-    //         Err(_) => {
-    //             let error = MCPError::Transport("Failed to receive event".to_string());
-    //             Err(error)
-    //         }
-    //     }
-    // }
-
-    fn close(&mut self) -> Result<(), MCPError> {
-        if !self.is_connected {
-            return Ok(());
-        }
-
-        self.is_connected = false;
-
-        if let Some(callback) = &self.on_close {
-            callback();
-        }
-
-        Ok(())
-    }
-
-    fn set_on_close(&mut self, callback: Option<CloseCallback>) {
-        self.on_close = callback;
-    }
-
-    fn set_on_error(&mut self, callback: Option<ErrorCallback>) {
-        self.on_error = callback;
-    }
-
-    fn set_on_message<F>(&mut self, callback: Option<F>)
-    where
-        F: Fn(&str) + Send + Sync + 'static,
-    {
-        self.on_message = callback.map(|f| Box::new(f) as Box<dyn Fn(&str) + Send + Sync>);
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io;
-    use std::os::fd::AsRawFd;
     use super::*;
-    use std::sync::{Arc};
-    use crate::transport::stdio_disruptor::StdioDisruptorProvider;
-
-    // Simple implementation of AsyncRead for testing
-    struct MockSyncIoProvider {
-        data: Arc<Vec<String>>,
-    }
-
-    impl MockSyncIoProvider {
-        fn new(data: Vec<String>) -> Self {
-            Self {
-                data: Arc::new(data),
-            }
-        }
-    }
-
-    impl IoProvider for MockSyncIoProvider {
-        fn read(&self) -> Result<PayLoad, MCPError> {
-            if self.data.is_empty() {
-                return Err(MCPError::Transport("No data".to_string()));
-            }
-
-            let data = PayLoad::builder()
-                .data(Some(self.data[0].clone()))
-                .hdr(HeaderType::Data)
-                .build();
-            Ok(data)
-        }
-
-        fn write(&mut self, data: &PayLoad) -> Result<(), MCPError> {
-            println!("{}", data.data.as_ref().unwrap());
-            Ok(())
-        }
-    }
-
-    // Basic test for StdioTransport
+    
     #[test]
-    fn test_send_receive() {
-        // Test message
-        let test_message = r#"{"id":1,"jsonrpc":"2.0","method":"test","params":{}}"#;
-
-        // Create a mock reader with test data
-        let mock_provider = MockSyncIoProvider::new(vec![test_message.to_string() + "\n"]);
-
-        // Create a transport with the mock reader
-        let mut transport = StdioTransport::new(mock_provider);
-
-        // Start the transport
-        transport.start();
-
-        // Define a simple struct to deserialize into
-        #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-        struct TestMessage {
-            id: u32,
-            jsonrpc: String,
-            method: String,
-            params: serde_json::Value,
-        }
-
-        // Receive the message
-        let message: TestMessage = transport.receive().unwrap();
-
-        // Verify the message
-        assert_eq!(message.id, 1);
-        assert_eq!(message.jsonrpc, "2.0");
-        assert_eq!(message.method, "test");
-
-        // Send a response
-        let response = TestMessage {
-            id: 1,
-            jsonrpc: "2.0".to_string(),
-            method: "response".to_string(),
-            params: serde_json::json!({}),
+    fn test_stdio_transport() {
+        let mut transport = StdioTransport::new();
+        let data = PayLoad {
+            data: Some("Hello".to_string()),
+            ctx: None,
         };
-
-        transport.send(&response);
-
-        // Close the transport
-        transport.close();
-
-        // Verify the transport is closed
-        assert!(!transport.is_connected);
-    }
-
-    // Test concurrent operations with two separate transports
-    #[test]
-    fn test_concurrent_operations() {
-        // Test message
-        let test_message1 = r#"{"id":1,"jsonrpc":"2.0","method":"test1","params":{}}"#;
-        let test_message2 = r#"{"id":2,"jsonrpc":"2.0","method":"test2","params":{}}"#;
-
-        // Create two separate transports with their own mock readers
-        let mock_io1 = MockSyncIoProvider::new(vec![test_message1.to_string() + "\n"]);
-        let mock_io2 = MockSyncIoProvider::new(vec![test_message2.to_string() + "\n"]);
-
-        let mut transport1 = StdioTransport::new(mock_io1);
-        let mut transport2 = StdioTransport::new(mock_io2);
-
-        // Start both transports
-        transport1.start().unwrap();
-        transport2.start().unwrap();
-
-        // Define a simple struct to deserialize into
-        #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-        struct TestMessage {
-            id: u32,
-            jsonrpc: String,
-            method: String,
-            params: serde_json::Value,
-        }
-
-        // Spawn tasks to receive messages concurrently
-        let s = std::thread::scope(|s| {
-            let h1 = s.spawn(|| {
-                let message: TestMessage = transport1.receive().unwrap();
-                message
-            });
-            let h2 =  s.spawn(|| {
-                let message: TestMessage = transport2.receive().unwrap();
-                message
-            });
-
-            let result1 = h1.join().unwrap();
-            let result2 = h2.join().unwrap();
-
-            // Verify the results
-            assert_eq!(result1.id, 1);
-            assert_eq!(result1.method, "test1");
-            assert_eq!(result2.id, 2);
-            assert_eq!(result2.method, "test2");
-        });
-    }
-
-    #[test]
-    fn test_disruptor() {
-        let io1 = StdioDisruptorProvider::new();
-        let mut transport1 = StdioTransport::new(io1.clone());
-
-        transport1.start();
-
-        #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-        struct TestMessage {
-            id: u32,
-            jsonrpc: String,
-            method: String,
-            params: serde_json::Value,
-        }
-
-        let message = TestMessage {
-            id: 1,
-            jsonrpc: "2.0".to_string(),
-            method: "test".to_string(),
-            params: serde_json::json!({}),
-        };
-
-        transport1.send(&message).unwrap();
-        transport1.send(&message).unwrap();
-        transport1.send(&message).unwrap();
-        transport1.send(&message).unwrap();
-
-
-        //read from stdin
-        let input_file = File::open("test_input.txt").unwrap();
-        // 备份原始 stdin
-        let original_stdin = io::stdin().as_raw_fd();
-
-        // 使用 unsafe 操作重定向 stdin
-        unsafe {
-            libc::dup2(input_file.as_raw_fd(), original_stdin);
-        }
-
-        let line = io1.clone().read().unwrap();
-        println!("{}", line.data().unwrap());
-    }
-
-    #[test]
-    fn test_stdio() {
-        //read from stdin
-        let input_file = File::open("test_input.txt").unwrap();
-        // 备份原始 stdin
-        let original_stdin = io::stdin().as_raw_fd();
-
-        // 使用 unsafe 操作重定向 stdin
-        unsafe {
-            libc::dup2(input_file.as_raw_fd(), original_stdin);
-        }
-
-        let mut buffer = String::new();
-        std::io::stdin().read_line(&mut buffer).unwrap();
-        println!("{}", buffer);
+        let layer = transport.layer0();
+        // layer.borrow().handle_inbound(Some(data.clone())).unwrap();
+        layer.borrow().handle_outbound(Some(data)).unwrap();
     }
 }
