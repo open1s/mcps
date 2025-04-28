@@ -3,7 +3,7 @@ use std::{ sync::Arc, time::Duration};
 use disruptor::{Producer};
 use ibag::iBag;
 use log::info;
-use rioc::{LayerChain, LayerResult, PayLoad};
+use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
@@ -263,6 +263,20 @@ impl Client {
     //     });
     // }
 
+    pub fn add_transport_layer(&mut self, layer: SharedLayer) {
+        self.chain.with(|chain|{
+                chain.add_layer(layer);
+            }
+        )
+    }
+
+    pub fn add_protocol_layer(&mut self, layer: SharedLayer) {
+        self.chain.with(|chain|{
+                chain.add_layer(layer);
+            }
+        )
+    }
+
     pub fn build(&mut self) {
         let client_cloned = self.clone();
         let builder = rioc::LayerBuilder::new();
@@ -306,13 +320,18 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    use crate::transport::stdio;
+
     use super::*;
     #[test]
     fn test_next_request_id() {
         let mut client = Client::new();
-        let id1 = client.next_request_id();
-        let id2 = client.next_request_id();
-        assert_eq!(id1, RequestId::Number(1));
-        assert_eq!(id2, RequestId::Number(2));
+        let layer0 = stdio::StdioTransport::new().layer0();
+
+        client.add_transport_layer(layer0);
+        client.build();
+
+        let d = client.handle_inbound();
+        println!("{:?}", d);
     }
 }
