@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -356,16 +357,17 @@ unsafe impl Send for SharedMemory {}
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
     use super::*;
 
 
     #[test]
     fn test_shared_memory() {
-        let mut mem = SharedMemory::create("test", 1024).unwrap();
+        let mut mem = SharedMemory::create("test1", 1024).unwrap();
         let mut buf = vec![0u8; 11];
         mem.write("hello world".as_bytes()).unwrap();
 
-        let mut rmem = SharedMemory::open("test").unwrap();
+        let mut rmem = SharedMemory::open("test1").unwrap();
         rmem.read(&mut buf).unwrap();
 
         assert_eq!(buf, "hello world".as_bytes());
@@ -373,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_shared_memory_wrap() {
-        let mut mem = SharedMemory::create("test", 128).unwrap();
+        let mut mem = SharedMemory::create("test2", 128).unwrap();
         let mut buf = vec![0u8; 192];
         for i in 0..192 {
             buf[i] = i as u8;
@@ -382,7 +384,7 @@ mod tests {
         mem.write(&buf[0..48]).unwrap();
 
         let mut rbuf = vec![0u8; 48];
-        let mut rmem = SharedMemory::open("test").unwrap();
+        let mut rmem = SharedMemory::open("test2").unwrap();
         rmem.read(&mut rbuf).unwrap();
 
         assert_eq!(&buf[0..48], rbuf);

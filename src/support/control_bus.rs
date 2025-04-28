@@ -16,7 +16,7 @@
 // THE SOFTWARE.
 
 use std::sync::{Arc, Mutex};
-use bus::{Bus, BusReader};
+use nbus::{Bus, BusReader};
 use disruptor::{BusySpin, MultiProducer, Sequence, SingleConsumerBarrier};
 use crate::MCPError;
 

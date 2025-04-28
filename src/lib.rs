@@ -14,9 +14,44 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
 pub mod schema;
 pub mod transport;
 pub mod support;
+pub mod config;
+pub mod server;
+pub mod client;
+
 
 pub use support::definition::error::MCPError;
+use log4rs;
+use log::info;
+
+pub fn init_log() {
+    //check if config/log4rs.yaml exists
+    let config_path = std::path::Path::new("config/log4rs.yaml");
+    if !config_path.exists() {
+       return;
+    }
+
+    log4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
+    info!("MCP Service booting up");
+}
+
+
+#[cfg(test)]
+mod tests {
+
+    use iconfig;
+    use crate::config::transport_config::TransportConfig;
+
+    #[test]
+   fn test_load_application_config() {
+      let config = iconfig::load().unwrap();
+
+      let transport: TransportConfig = config.resolve_prefix("transport").unwrap();
+      println!("{:?}", transport);
+
+      let transport = config.resolve_prefix::<TransportConfig>("transport").unwrap();
+      println!("{:?}", transport);
+   }
+}
