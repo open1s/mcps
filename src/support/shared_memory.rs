@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-
-
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
