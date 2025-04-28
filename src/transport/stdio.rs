@@ -24,8 +24,8 @@ use crate::MCPError;
 use disruptor::{Producer, Sequence};
 use rioc::{Direction, Layer, LayerBuilder, LayerResult, PayLoad, SharedLayer};
 use crate::support::ControlBus;
-use crate::transport::disruptor::{DisruptorProcessorCallback, DisruptorWriter};
-use super::disruptor::DisruptorFactory;
+use crate::support::disruptor::{DisruptorProcessorCallback, DisruptorWriter};
+use crate::support::disruptor::DisruptorFactory;
 
 
 /// Standard IO transport
@@ -36,10 +36,10 @@ pub struct StdioTransport{
 
 impl StdioTransport {
     pub fn new() -> Self {
-        let disruptor = DisruptorFactory::create(Box::new(|e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
+        let disruptor = DisruptorFactory::create(|e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
             //write to stdout
             println!("{:?}", e.data.clone().unwrap());
-        }));
+        });
 
         StdioTransport {
             control_bus: Arc::new(ControlBus::new()),
@@ -78,6 +78,7 @@ impl StdioTransport {
         let layer = builder
             .with_inbound_fn(move |req|{
                let data =  rx_io.borrow_mut().layer0_rx();
+               log::info!("Received request: {:?}", data);
                Ok(LayerResult{
                     direction: Direction::Inbound,
                     data: Some(data.unwrap()),
@@ -87,6 +88,7 @@ impl StdioTransport {
                 if req.is_none(){
                     return Err("no data to send".to_string());
                 }
+                log::info!("Sending request: {:?}", req);
                 let req = req.unwrap();
                 tx_io.borrow_mut().layer0_tx(req).unwrap();
                 Ok(LayerResult{

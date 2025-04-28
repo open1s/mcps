@@ -21,15 +21,27 @@ pub mod config;
 pub mod server;
 pub mod client;
 
+
 pub use support::definition::error::MCPError;
+use log4rs;
+use log::info;
+
+pub fn init_log() {
+    //check if config/log4rs.yaml exists
+    let config_path = std::path::Path::new("config/log4rs.yaml");
+    if !config_path.exists() {
+       return;
+    }
+
+    log4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
+    info!("MCP Service booting up");
+}
 
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use iconfig;
-    use iconfig::ApplicationConfig;
     use crate::config::transport_config::TransportConfig;
 
     #[test]
@@ -42,16 +54,4 @@ mod tests {
       let transport = config.resolve_prefix::<TransportConfig>("transport").unwrap();
       println!("{:?}", transport);
    }
-
-    #[rioc::provider]
-    #[provide(Arc<ApplicationConfig>, || Arc::new(iconfig::load().unwrap()))]
-    struct InitProvider{
-    }
-
-//     #[test]
-//    fn test_resolve_prefix() {
-//        let init_provider = ConfigProvider::new();
-//        let config = init_provider.resolve::<Arc<ApplicationConfig>>().unwrap();
-//        println!("{:?}", config);
-//    }
 }

@@ -7,24 +7,19 @@ pub type DisruptorWriter = MultiProducer<PayLoad, SingleConsumerBarrier>;
 pub struct DisruptorFactory;
 
 impl DisruptorFactory {
-    pub fn create(mut f: DisruptorProcessorCallback) -> DisruptorWriter {
-        let factory = || {
-            PayLoad  {
-                data: None,
-                ctx: None,
-            }
+    pub fn create(mut f: impl FnMut(&PayLoad, Sequence, bool) + Send + 'static) -> DisruptorWriter {
+        let factory = || PayLoad {
+            data: None,
+            ctx: None,
         };
-
-        // Closure for processing events.
+    
         let processor = move |e: &PayLoad, sequence: Sequence, end_of_batch: bool| {
             f(e, sequence, end_of_batch);
         };
-
-        let size = 64;
-        let producer = disruptor::build_multi_producer(size, factory, BusySpin)
+    
+        disruptor::build_multi_producer(64, factory, BusySpin)
             .handle_events_with(processor)
-            .build();
-        producer
+            .build()
     }
 }
 
@@ -33,17 +28,17 @@ impl DisruptorFactory {
 mod tests {
     use disruptor::{Producer, Sequence};
     use rioc::PayLoad;
-    use crate::transport::disruptor::DisruptorFactory;
-
-    use super::DisruptorProcessorCallback;
+    use super::DisruptorFactory;
 
     #[test]
     fn test_disruptor() {
-        let f:  DisruptorProcessorCallback = Box::new(|e: &PayLoad,_seq: Sequence,_end_of_patch:bool| {
+        // let f:  DisruptorProcessorCallback = Box::new(|e: &PayLoad,_seq: Sequence,_end_of_patch:bool| {
+        //     println!("{:?}",e.data.clone().unwrap());
+        // });
+
+        let mut producer = DisruptorFactory::create(|e: &PayLoad, _seq: Sequence, _end_of_patch:bool| {
             println!("{:?}",e.data.clone().unwrap());
         });
-
-        let mut producer = DisruptorFactory::create(f);
 
         producer.publish(|e|{
             e.data = Some("Hello".to_string());

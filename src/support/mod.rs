@@ -16,6 +16,7 @@
 // THE SOFTWARE.
 
 pub mod help;
+pub mod disruptor;
 pub mod definition;
 mod control_bus;
 mod shared_memory;

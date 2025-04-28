@@ -1,11 +1,10 @@
 use std::{collections::HashMap, sync::{Arc, Mutex}, time::Duration};
-use disruptor::{BusySpin, Producer, Sequence};
+use disruptor::{Producer, Sequence};
 use ibag::iBag;
 use log::info;
 use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
 use serde_json::Value;
-
-use crate::{schema::{client::{CallToolParams, ListToolsResult}, common::{Implementation, TextContent, Tool}, json_rpc::{self, JSONRPCMessage, JSONRPCResponse, RequestId, LATEST_PROTOCOL_VERSION}, server::{CallToolResult, InitializeResult, ServerCapabilities, ToolResultContent, ToolsCapability}}, support::ControlBus, transport::disruptor::{ DisruptorWriter}, MCPError};
+use crate::{schema::{client::{CallToolParams, ListToolsResult}, common::{Implementation, TextContent, Tool, ToolInputSchema}, json_rpc::{self, JSONRPCMessage, JSONRPCResponse, RequestId, LATEST_PROTOCOL_VERSION}, server::{CallToolResult, InitializeResult, ServerCapabilities, ToolResultContent, ToolsCapability}}, support::{disruptor::{ DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
 
 
 
@@ -55,7 +54,7 @@ impl Default for ServerConfig {
     }
 }
 
-pub type ToolHandler = Box<dyn Fn(Value)->Result<Value,MCPError>>;
+pub type ToolHandler = Box<dyn Fn(Value)->Result<Value,MCPError> + Send>;
 
 #[derive(Clone)]
 pub struct Server {
@@ -63,7 +62,8 @@ pub struct Server {
     tool_handlers: Arc<Mutex<HashMap<String, ToolHandler>>>,
     notify: Arc<ControlBus>,
     chain: iBag<LayerChain>,
-    disruptor: Option<DisruptorWriter>
+    disruptor: Option<DisruptorWriter>,
+    is_initialized: bool,
 }
 
 impl Server {
@@ -73,7 +73,8 @@ impl Server {
             tool_handlers: Arc::new(Mutex::new(HashMap::new())),
             notify: Arc::new(ControlBus::new()),
             chain: iBag::new(LayerChain::new()),
-            disruptor: None
+            disruptor: None,
+            is_initialized: false,
        }
     }
 
@@ -99,38 +100,29 @@ impl Server {
 
 
     pub fn start(&mut self) -> Result<(), MCPError> {
-        let cloned = self.clone();
-        let factory = || {
-            PayLoad  {
-                data: None,
-                ctx: None,
-            }
-        };
+        if self.is_initialized {
+            return Err(MCPError::Transport("Server already initialized".to_string()));
+        }
+        self.is_initialized = true;
 
-        // Closure for processing events.
-        let processor = move |e: &PayLoad, sequence: Sequence, end_of_batch: bool| {
-            //inbound message
-            if let None = &e.data {
-                return;
-            }
-            let message = e.data.clone().unwrap();
-            let message= serde_json::from_str::<JSONRPCMessage>(&message);
-            match message {
-                Ok(message) => {
-                    cloned.handle_message(message);
-                    let _ = cloned.handle_message(message);
-                }
-                _ => {
-                    
+        let server = self.clone();
+        let disruptor = DisruptorFactory::create(move |e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
+            if let Some(data) = &e.data {
+                info!("Received message: {:?}", data);
+                match serde_json::from_str::<JSONRPCMessage>(&data) {
+                    Ok(message) => {
+                        if let Err(err) = server.handle_message(message) {
+                            log::error!("handle_message failed: {}", err);
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("Failed to parse JSONRPCMessage: {}", err);
+                    }
                 }
             }
-        };
+        });
 
-        let size = 64;
-        let producer = disruptor::build_multi_producer(size, factory, BusySpin)
-            .handle_events_with(processor)
-            .build();
-        self.disruptor = Some(producer);   
+        self.disruptor = Some(disruptor);   
         Ok(())
     }
 
@@ -149,7 +141,7 @@ impl Server {
 
     pub fn handle_inbound(&self) -> Result<(),String> {
         self.chain.with_read(|layer|{
-            layer.handle_inbound(None);
+            let _ = layer.handle_inbound(None);
         });
         Ok(())
     }
@@ -428,5 +420,32 @@ impl Server {
 
 #[test]
 fn test_server() {
-    
+    crate::init_log();
+    let config = ServerConfig::new()
+        .with_name("MCP Server")
+        .with_version("1.0.0")
+        .with_tools(Tool {
+            name: "test_tool".to_string(),
+            input_schema: ToolInputSchema{
+                r#type: "object".to_string(),
+                properties: None,
+                required: None,
+            },
+            description: None,
+        });
+
+    let mut server = Server::new(config);
+    let _ = server.register_tool_handler("test_tool".to_string(), |params| {
+        Ok(Value::String("Hello World".to_string()))
+    });
+       
+    //build stdio as transport layer
+    let stdio = StdioTransport::new();
+    let layer0 = stdio.layer0();
+    server.add_transport_layer(layer0);
+    server.start();   
+
+    server.build();
+
+    server.handle_inbound();
 }
