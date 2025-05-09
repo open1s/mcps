@@ -134,7 +134,7 @@ impl Server {
 
     pub fn handle_outbound(&self, message: Option<rioc::PayLoad>) -> Result<(),String>{
         self.chain.with_read(|layer|{
-            layer.handle_outbound(message);
+           let _ = layer.handle_outbound(message);
         });
         Ok(())
     }
@@ -436,16 +436,16 @@ fn test_server() {
 
     let mut server = Server::new(config);
     let _ = server.register_tool_handler("test_tool".to_string(), |params| {
-        Ok(Value::String("Hello World".to_string()))
+        Ok(Value::String("Hello from test tool".to_string()))
     });
        
     //build stdio as transport layer
     let stdio = StdioTransport::new("abc", true);
     let layer0 = stdio.create();
     server.add_transport_layer(layer0);
-    server.start();   
+    let _ =  server.start();   
 
     server.build();
 
-    server.handle_inbound();
+    let _ = server.handle_inbound();
 }

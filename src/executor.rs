@@ -1,0 +1,106 @@
+use disruptor::Producer;
+
+use crate::{client::Client, server::Server, support::ControlBus};
+
+
+pub struct ServerExecutor{
+    bus: ControlBus,
+    started: bool,
+}
+
+pub struct ClientExecutor{
+    bus: ControlBus,
+    started: bool,
+}
+
+
+
+impl ServerExecutor {
+    pub fn new() -> Self {
+        ServerExecutor {
+            bus: ControlBus::new(),
+            started: false,
+        }
+    }
+
+    pub fn stop(&self) {
+        let mut tx = self.bus.clone_tx().unwrap();
+        let _ = tx.publish(|e|{
+            *e = 1;
+        });
+    }
+
+    pub fn start(&mut self, server: Server) -> Result<String, String> {
+        if self.started {
+            return Err("Server already started".to_string());
+        }
+
+        self.started = true;
+        let mut rx = self.bus.clone_rx().unwrap();
+        let handle = std::thread::spawn(move || {
+           loop {
+                let envent = rx.try_recv();
+                match envent {
+                    Ok(r) => {
+                        println!("!!! Received: {}", r);
+                        if r == 1 {
+                            break;
+                        }
+                    }
+                    Err(_) => {}        
+                }
+
+                let _ = server.handle_inbound();
+           }
+        });
+
+        handle.join().map_err(|e| format!("Error executing server: {:?}", e))?;
+
+        Ok("Server started".to_string())
+    }
+}
+
+impl ClientExecutor {
+    pub fn new() -> Self {
+        ClientExecutor {
+            bus: ControlBus::new(),
+            started: false,
+        }
+    }
+
+    pub fn stop(&self) {
+        let mut tx = self.bus.clone_tx().unwrap();
+        let _ = tx.publish(|e|{
+            *e = 1;
+        });
+    }
+
+    pub fn start(&mut self, client: Client) -> Result<String, String> {
+        if self.started {
+            return Err("Client already started".to_string());
+        }
+
+        self.started = true;
+        let mut rx = self.bus.clone_rx().unwrap();
+        let handle = std::thread::spawn(move || {
+           loop {
+                let envent = rx.try_recv();
+                match envent {
+                    Ok(r) => {
+                        println!("!!! Received: {}", r);
+                        if r == 1 {
+                            break;
+                        }
+                    }
+                    Err(_) => {}        
+                }
+
+                let _ = client.handle_inbound();
+           }
+        });
+
+        handle.join().map_err(|e| format!("Error executing client: {:?}", e))?;
+
+        Ok("Client started".to_string())
+    }
+}

@@ -20,6 +20,7 @@ pub mod support;
 pub mod config;
 pub mod server;
 pub mod client;
+pub mod executor;
 
 
 pub use support::definition::error::MCPError;
