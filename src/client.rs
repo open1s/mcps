@@ -1,9 +1,7 @@
 use std::{ sync::Arc, time::Duration};
 
-use disruptor::{Producer};
 use ibag::iBag;
-use log::info;
-use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
+use rioc::{LayerChain, LayerResult, SharedLayer};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
@@ -32,11 +30,31 @@ impl Client {
         }
     }
 
-    pub fn with_timeout(mut self, duration: Duration) -> Self {
+    pub fn with_timeout(&mut self, duration: Duration){
         self.timeout_duration = Some(duration);
-        self
     }
 
+    pub fn recieve_bytes_with_timeout(&self) -> Result<Vec<u8>, MCPError> {
+        if self.timeout_duration.is_none() {
+            return self.try_recieve_bytes();
+        }else {
+            let timeout_duration = self.timeout_duration.unwrap();
+            let start_time = std::time::Instant::now();
+
+            while start_time.elapsed() < timeout_duration {
+                let result = self.try_recieve_bytes();
+                if result.is_ok() {
+                    return result;
+                }
+                // Wait a bit before trying again
+                // Need polling for data, not sleeping
+                // This is a hack, but it works for now
+                // maybe use wait for notify?
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            return Err(MCPError::Transport("Timeout".to_string()));
+        }
+    }
 
     pub fn recieve_with_timeout<R: DeserializeOwned + Send + Sync>(&self) -> Result<R, MCPError> {
         if self.timeout_duration.is_none() {
@@ -57,6 +75,22 @@ impl Client {
                 std::thread::sleep(Duration::from_millis(300));
             }
             return Err(MCPError::Transport("Timeout".to_string()));
+        }
+    }
+
+
+    pub fn try_recieve_bytes(&self) -> Result<Vec<u8>, MCPError> {
+        let mut recieved: Option<String> = None;
+        self.chain.with_read(|layer| {
+            let req = layer.handle_inbound(None);
+            if let Ok(req) = req {
+                recieved = req.data.unwrap().data;
+            }
+        });
+        if let Some(data) = recieved {
+            Ok(data.into_bytes())
+        }else {
+            Err(MCPError::Transport("No data received".to_string()))
         }
     }
 
@@ -320,18 +354,90 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use crate::transport::stdio;
+    use serde::Deserialize;
+    use tungstenite::handshake::client;
+
+    use crate::{support::definition::McpLayer, transport::stdio};
 
     use super::*;
     #[test]
     fn test_next_request_id() {
         let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new().layer0();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
 
         client.add_transport_layer(layer0);
         client.build();
 
         let d = client.handle_inbound();
         println!("{:?}", d);
+    }
+
+    #[test]
+    fn test_handle_outbound() {
+        let mut client = Client::new();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        client.add_transport_layer(layer0);
+        let a = client.build();
+        println!("{:?}", a);
+    }
+
+    #[test]
+    fn test_handle_inbound() {
+        let mut client = Client::new();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        client.add_transport_layer(layer0);
+        let a = client.build();
+        println!("{:?}", a);
+    }
+
+
+    #[test]
+    fn test_client() {
+        let mut client = Client::new();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        client.add_transport_layer(layer0);
+        let result = client.build();
+
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn test_client_with_timeout() {
+        let mut client = Client::new();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        client.add_transport_layer(layer0);
+        client.with_timeout(Duration::from_secs(5));
+        let result = client.build();
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn test_client_with_timeout_recieve() {
+        //define struct with serde
+        #[derive(Serialize, Deserialize, Debug)]
+        struct TestStruct {
+            name: String,
+            age: u32,
+        }
+
+
+        let mut client = Client::new();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        client.add_transport_layer(layer0);
+        // client.with_timeout(Duration::from_secs(50));
+        let result = client.build();
+        let recieved =  client.recieve_with_timeout::<TestStruct>();
+        println!("{:?}", recieved.unwrap());
+    }
+
+    #[test]
+    fn test_client_with_timeout_recieve_bytes() {
+        let mut client = Client::new();
+        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        client.add_transport_layer(layer0);
+        // client.with_timeout(Duration::from_secs(50));
+        let result = client.build();
+        let recieved =  client.recieve_bytes_with_timeout();
+        println!("{:?}", String::from_utf8(recieved.unwrap()).unwrap());
     }
 }

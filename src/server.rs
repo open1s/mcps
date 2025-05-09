@@ -4,7 +4,7 @@ use ibag::iBag;
 use log::info;
 use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
 use serde_json::Value;
-use crate::{schema::{client::{CallToolParams, ListToolsResult}, common::{Implementation, TextContent, Tool, ToolInputSchema}, json_rpc::{self, JSONRPCMessage, JSONRPCResponse, RequestId, LATEST_PROTOCOL_VERSION}, server::{CallToolResult, InitializeResult, ServerCapabilities, ToolResultContent, ToolsCapability}}, support::{disruptor::{ DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
+use crate::{schema::{client::{CallToolParams, ListToolsResult}, common::{Implementation, TextContent, Tool, ToolInputSchema}, json_rpc::{self, JSONRPCMessage, JSONRPCResponse, RequestId, LATEST_PROTOCOL_VERSION}, server::{CallToolResult, InitializeResult, ServerCapabilities, ToolResultContent, ToolsCapability}}, support::{definition::McpLayer, disruptor::{ DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
 
 
 
@@ -440,8 +440,8 @@ fn test_server() {
     });
        
     //build stdio as transport layer
-    let stdio = StdioTransport::new();
-    let layer0 = stdio.layer0();
+    let stdio = StdioTransport::new("abc", true);
+    let layer0 = stdio.create();
     server.add_transport_layer(layer0);
     server.start();   
 
