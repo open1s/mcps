@@ -37,7 +37,7 @@ impl Client {
     pub fn recieve_bytes_with_timeout(&self) -> Result<Vec<u8>, MCPError> {
         if self.timeout_duration.is_none() {
             return self.try_recieve_bytes();
-        }else {
+        } else {
             let timeout_duration = self.timeout_duration.unwrap();
             let start_time = std::time::Instant::now();
 
@@ -130,7 +130,7 @@ impl Client {
         };
 
         //send initial request to server
-        self.handle_outbound(Some(payload));
+        let _ = self.handle_outbound(Some(payload));
 
         //wait for response
         let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
@@ -167,7 +167,7 @@ impl Client {
             ctx: None
         };
         //send tool call request to server
-        self.handle_outbound(Some(payload));
+        let _ = self.handle_outbound(Some(payload));
 
         //wait for response 
         let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
@@ -203,7 +203,7 @@ impl Client {
         };
 
          //send initial request to server
-         self.handle_outbound(Some(payload));
+        let _ = self.handle_outbound(Some(payload));
 
          //wait for response
          let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
@@ -247,38 +247,9 @@ impl Client {
         }
     }
 
-
-    // pub fn start(&mut self) -> Result<(), MCPError> {
-    //     if self.connected {
-    //         return Err(MCPError::Protocol("Client already initialized".to_string()));
-    //     }
-    //     self.connected = true;
-
-    //     let client = self.clone();
-    //     let disruptor = DisruptorFactory::create(move |e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
-    //         if let Some(data) = &e.data {
-    //             info!("Received message: {:?}", data);
-    //             match serde_json::from_str::<JSONRPCMessage>(&data) {
-    //                 Ok(message) => {
-    //                     if let Err(err) = client.handle_message(message) {
-    //                         log::error!("handle_message failed: {}", err);
-    //                     }
-    //                 }
-    //                 Err(err) => {
-    //                     log::error!("Failed to parse JSONRPCMessage: {}", err);
-    //                 }
-    //             }
-    //         }
-    //     });
-
-    //     self.disruptor = Some(disruptor);   
-    //     Ok(())
-    // }
-
-
-    pub fn handle_outbound(&self, message: Option<rioc::PayLoad>) -> Result<(),String>{
+    fn handle_outbound(&self, message: Option<rioc::PayLoad>) -> Result<(),String>{
         self.chain.with_read(|layer|{
-            layer.handle_outbound(message);
+            let _ =  layer.handle_outbound(message);
         });
         Ok(())
     }
@@ -290,12 +261,6 @@ impl Client {
         });
         result
     }
-
-    // pub fn publish(&self, message: PayLoad) {
-    //     self.disruptor.clone().unwrap().publish(|e| {
-    //         e.data = message.data;
-    //     });
-    // }
 
     pub fn add_transport_layer(&mut self, layer: SharedLayer) {
         self.chain.with(|chain|{
@@ -312,7 +277,6 @@ impl Client {
     }
 
     pub fn build(&mut self) {
-        let client_cloned = self.clone();
         let builder = rioc::LayerBuilder::new();
 
         let layer = builder
@@ -355,7 +319,6 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use tungstenite::handshake::client;
 
     use crate::{support::definition::McpLayer, transport::stdio};
 
