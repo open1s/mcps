@@ -15,6 +15,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use rioc::SharedLayer;
+
 pub mod error {
     use thiserror::Error;
 
@@ -37,5 +39,7 @@ pub mod error {
     }
 }
 
-
+pub trait McpLayer {
+    fn create(&self) -> SharedLayer;
+}
 

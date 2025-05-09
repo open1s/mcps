@@ -60,6 +60,11 @@ impl SharedMemory {
         if initial_size == 0 || initial_size % DEFAULT_ALIGNMENT != 0 {
             return Err(SharedMemoryError::AlignmentError);
         }
+        
+        //create parent
+        if path.as_ref().parent().is_some() {
+            std::fs::create_dir_all(path.as_ref().parent().unwrap())?;
+        }
 
         let total_size = align_up(size_of::<SharedHeader>() + initial_size, 4096);
         if total_size > isize::MAX as usize {
@@ -148,7 +153,7 @@ impl SharedMemory {
         })
     }
 
-    pub fn write(&mut self, data: &[u8]) -> Result<(), SharedMemoryError> {
+    pub fn write(&self, data: &[u8]) -> Result<(), SharedMemoryError> {
         let header = unsafe { self.header.as_ref() };
         let capacity = header.capacity.load(Ordering::SeqCst);
 
@@ -216,12 +221,12 @@ impl SharedMemory {
         Ok(())
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, SharedMemoryError> {
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize, SharedMemoryError> {
         self.read_timeout(buf, None)
     }
 
     pub fn read_timeout(
-        &mut self,
+        &self,
         buf: &mut [u8],
         timeout: Option<Duration>,
     ) -> Result<usize, SharedMemoryError> {
@@ -353,6 +358,46 @@ impl Drop for SharedMemory {
 }
 
 unsafe impl Send for SharedMemory {}
+
+
+pub struct MemoryDuplex {
+    reader: SharedMemory,
+    writer: SharedMemory,
+}
+
+impl MemoryDuplex {
+    pub fn create(path: impl AsRef<Path>, initial_size: usize) -> Result<Self, SharedMemoryError> {
+        let mut reader_file = path.as_ref().to_string_lossy().to_string();
+        reader_file.push_str("_reader");
+
+        let mut writer_file = path.as_ref().to_string_lossy().to_string();
+        writer_file.push_str("_writer");
+
+        let reader = SharedMemory::create(reader_file, initial_size)?;
+        let writer = SharedMemory::create(writer_file, initial_size)?;
+        Ok(Self { reader, writer })
+    }
+
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, SharedMemoryError> {
+        let mut write_file = path.as_ref().to_string_lossy().to_string();
+        write_file.push_str("_reader");
+
+        let mut reader_file = path.as_ref().to_string_lossy().to_string();
+        reader_file.push_str("_writer");
+
+        let reader = SharedMemory::open(reader_file)?;
+        let writer = SharedMemory::open(write_file)?;
+        Ok(Self { reader, writer })
+    }
+
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize, SharedMemoryError> {
+        self.reader.read(buf)
+    }
+
+     pub fn write(&self, data: &[u8]) -> Result<(), SharedMemoryError> {
+        self.writer.write(data)
+    }
+}
 
 
 #[cfg(test)]
