@@ -50,11 +50,11 @@ impl ServerExecutor {
                     Err(_) => {}        
                 }
 
-                let _ = server.handle_inbound();
+                let result = server.handle_inbound();
            }
         });
 
-        handle.join().map_err(|e| format!("Error executing server: {:?}", e))?;
+        // handle.join().map_err(|e| format!("Error executing server: {:?}", e))?;
 
         Ok("Server started".to_string())
     }

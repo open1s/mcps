@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// The latest supported MCP protocol version
-pub const LATEST_PROTOCOL_VERSION: &str = "2024-11-05";
+pub const LATEST_PROTOCOL_VERSION: &str = "2025-03-26";
 /// The JSON-RPC version used by MCP
 pub const JSONRPC_VERSION: &str = "2.0";
 

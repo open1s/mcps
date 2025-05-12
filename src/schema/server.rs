@@ -15,13 +15,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use std::{collections::HashMap};
+
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::common::{
-    EmbeddedResource, ImageContent, Implementation, LoggingLevel, Role, TextContent,
-};
+use super::{client::{CancelledNotification, GetPromptResult, ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PingRequest, ProgressNotification, ReadResourceResult}, common::{
+    AudioContent, EmbeddedResource, ImageContent, Implementation, LoggingLevel, Role, TextContent
+}, json_rpc};
 
 
 /// Server capabilities
@@ -124,6 +126,16 @@ pub struct PromptListChangedNotification {
     pub method: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolAnnotations{
+    pub destructiveHint: bool,
+    pub idempotentHint: bool,
+    pub openWorldHint: bool,
+    pub readOnlyHint: bool,
+    pub title: String,
+}
+
+
 /// An optional notification from the server to the client, informing it that the list of tools it offers has changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolListChangedNotification {
@@ -223,6 +235,7 @@ pub struct CreateMessageResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MessageContent {
+    Audio(AudioContent),
     Text(TextContent),
     Image(ImageContent),
 }
@@ -264,14 +277,17 @@ pub struct ModelPreferences {
 
     /// How much to prioritize cost when selecting a model.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "costPriority")]
     pub cost_priority: Option<f32>,
 
     /// How much to prioritize sampling speed (latency) when selecting a model.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "speedPriority")]
     pub speed_priority: Option<f32>,
 
     /// How much to prioritize intelligence and capabilities when selecting a model.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "intelligencePriority")]
     pub intelligence_priority: Option<f32>,
 }
 
@@ -286,6 +302,7 @@ pub struct ModelHint {
 /// The server's response to a completion/complete request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteResult {
+    _meta: Option<HashMap<String, String>>,
     pub completion: CompletionInfo,
 }
 
@@ -324,6 +341,7 @@ pub struct CallToolResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolResultContent {
+    Audio(AudioContent),
     Text(TextContent),
     Image(ImageContent),
     Resource(EmbeddedResource),
@@ -335,4 +353,33 @@ pub enum ToolResultContent {
 pub struct ToolCallResult {
     /// The result of the tool call
     pub result: Value,
+}
+
+pub enum ServerNotification{
+    CancelledNotification(CancelledNotification),
+    ProgressNotification(ProgressNotification),
+    ResourceListChangedNotification(ResourceListChangedNotification),
+    ResourceUpdatedNotification(ResourceUpdatedNotification),
+    PromptListChangedNotification(PromptListChangedNotification),
+    ToolListChangedNotification(ToolListChangedNotification),
+    LoggingMessageNotification(LoggingMessageNotification),
+}
+
+pub enum ServerRequest{
+    Ping(PingRequest),
+    CreateMessageRequest(CreateMessageRequest),
+    ListRootsRequest(ListRootsRequest),
+}
+
+pub enum ServerResult{
+    Result(json_rpc::Result),
+    InitializeRusult(InitializeResult),
+    ListResourcesResult(ListResourcesResult),
+    ListResourceTemplatesResult(ListResourceTemplatesResult),
+    ReadResourceResult(ReadResourceResult),
+    ListPromptsResult(ListPromptsResult),
+    GetPromptResult(GetPromptResult),
+    ListToolsResult(ListToolsResult),
+    CallToolResult(CallToolResult),
+    CompleteResult(CompleteResult),   
 }

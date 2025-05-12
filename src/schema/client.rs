@@ -1,4 +1,4 @@
-// Copyright (c) { props["inceptionYear"] } { props["copyrightOwner"] }
+//EmptyResultCopyright (c) { props["inceptionYear"] } { props["copyrightOwner"] }
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -15,15 +15,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use std::collections::HashMap;
+
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::common::{
-    BlobResourceContents, Cursor, Implementation, LoggingLevel, ProgressToken, Prompt,
-    PromptMessage, Resource, ResourceTemplate, Root, TextResourceContents, Tool,
+    BlobResourceContents, Cursor, Implementation, LoggingLevel, ProgressToken, Prompt, PromptMessage, Resource, ResourceTemplate, Role, Root, TextResourceContents, Tool
 };
-use super::json_rpc::RequestId;
+use super::json_rpc::{JSONRPCError, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse, RequestId};
+use super::server::{CallToolResult, CreateMessageResult, MessageContent};
 
 /// Client capabilities
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +58,25 @@ pub struct InitializeRequest {
     pub params: InitializeParams,
 }
 
+pub enum ClientRequest {
+    Initialize(InitializeRequest),
+    Ping(PingRequest),
+    ListResources(ListResourcesRequest),
+    ListResourceTemplates(ListResourceTemplatesRequest),
+    ReadResource(ReadResourceRequest),
+    Subscribe(SubscribeRequest),
+    Unsubscribe(UnsubscribeRequest),
+    ListPrompts(ListPromptsRequest),
+    GetPrompt(GetPromptRequest),
+    ListTools(ListToolsRequest),
+    CallTool(CallToolRequest),
+    SetLevel(SetLevelRequest),
+    Complete(CompleteRequest),
+}
+
+pub enum ClientResult {
+}
+
 /// Parameters for initialize request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitializeParams {
@@ -69,10 +90,23 @@ pub struct InitializeParams {
     pub client_info: Implementation,
 }
 
+pub enum ClientNotification {
+    Cancelled(CancelledNotification),
+    Initialized(InitializedNotification),
+    ProgressNotification(ProgressNotification),
+    RootsListChanged(RootsListChangedNotification),
+}
+
 /// This notification is sent from the client to the server after initialization has finished.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitializedNotification {
     pub method: String,
+    pub params: InitializedNotificationParams,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializedNotificationParams {
+    pub _meta: Option<HashMap<String, String>>,
 }
 
 /// A notification which can be sent by either side to indicate that it is cancelling a previously-issued request.
@@ -145,6 +179,15 @@ pub struct ListResourcesResult {
 
     /// The list of resources
     pub resources: Vec<Resource>,
+}
+
+pub struct JSONRPCBatchRequest {
+    requests: Vec<JSONRPCBatchRequestEnum>,
+}
+
+pub enum JSONRPCBatchRequestEnum{
+    Request(JSONRPCRequest),
+    Notification(JSONRPCNotification),
 }
 
 /// Sent from the client to request a list of resource templates the server has.
@@ -278,6 +321,13 @@ pub struct ListToolsRequest {
     pub params: Option<PaginatedParams>,
 }
 
+pub enum ClientRequst {
+    CreateMessageResult(CreateMessageResult),
+    ListRootsResult(ListRootsResult),
+    ListToolsResult(ListToolsResult),
+    CallToolResult(CallToolResult)
+}
+
 /// The server's response to a tools/list request from the client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListToolsResult {
@@ -332,6 +382,7 @@ pub struct CompleteRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteParams {
     /// Reference to a prompt or resource
+    #[serde(rename = "ref")]
     pub ref_: Reference,
 
     /// The argument's information
@@ -377,6 +428,7 @@ pub struct ArgumentInfo {
 /// The client's response to a roots/list request from the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListRootsResult {
+    pub _meta: Option<HashMap<String, String>>,
     pub roots: Vec<Root>,
 }
 
@@ -384,4 +436,16 @@ pub struct ListRootsResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootsListChangedNotification {
     pub method: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JSONRPCBatchResponse {
+    #[serde(flatten)]
+    response: Vec<JSONRPCBatchResponseEnum>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum JSONRPCBatchResponseEnum {
+    Response(JSONRPCResponse),
+    Error(JSONRPCError),
 }

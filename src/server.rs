@@ -140,8 +140,9 @@ impl Server {
     }
 
     pub fn handle_inbound(&self) -> Result<(),String> {
+        // let mut result: Result<LayerResult,String> = Err("".to_string());
         self.chain.with_read(|layer|{
-            let _ = layer.handle_inbound(None);
+           let _ = layer.handle_inbound(None);
         });
         Ok(())
     }
