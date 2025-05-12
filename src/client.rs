@@ -7,7 +7,6 @@ use serde_json::Value;
 
 use crate::{schema::schema::{JSONRPCMessage, JSONRPCRequest, RequestId, LATEST_PROTOCOL_VERSION}, support::{disruptor::DisruptorWriter, ControlBus}, MCPError};
 
-
 #[derive(Clone)]
 pub struct Client {
     next_request_id: i64,
