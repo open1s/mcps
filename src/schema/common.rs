@@ -15,6 +15,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use std::{collections::HashMap, hash::Hash};
+
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -79,6 +81,16 @@ pub struct Annotations {
     pub priority: Option<f32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioContent {
+    pub r#type: String,
+    pub data: String,
+    pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Annotations>,
+}
+
 /// Describes an implementation of MCP.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +98,8 @@ pub struct Implementation {
     pub name: String,
     pub version: String,
 }
+
+
 
 /// Text provided to or from an LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,6 +255,7 @@ pub struct PromptMessage {
 pub enum PromptMessageContent {
     Text(TextContent),
     Image(ImageContent),
+    Audio(AudioContent),
     Resource(EmbeddedResource),
 }
 
@@ -281,4 +296,21 @@ pub struct Root {
     /// An optional name for the root.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedRequest {
+    pub method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<Cursor>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedResult{
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<HashMap<String, Value>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: Option<String>,
 }

@@ -30,8 +30,9 @@ impl Client {
         }
     }
 
-    pub fn with_timeout(&mut self, duration: Duration){
+    pub fn with_timeout(&mut self, duration: Duration) -> &mut Self {
         self.timeout_duration = Some(duration);
+        self
     }
 
     pub fn recieve_bytes_with_timeout(&self) -> Result<Vec<u8>, MCPError> {
@@ -147,6 +148,36 @@ impl Client {
         }
     }
     
+    pub fn list_tool(&mut self) -> Result<Value, MCPError> {
+        let list_tool_request = JSONRPCRequest::new(
+            self.next_request_id(),
+            "tools/list".to_string(),
+            None
+        );
+
+        let message = JSONRPCMessage::Request(list_tool_request);
+        let payload = rioc::PayLoad{
+            data: Some(serde_json::to_string(&message).unwrap()),
+            ctx: None
+        };
+        //send initial request to server
+        let _ = self.handle_outbound(Some(payload));
+
+        //wait for response 
+        let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
+        match response {
+            JSONRPCMessage::Response(resp) => {
+                Ok(resp.result)
+            }
+            JSONRPCMessage::Error(error) => {
+                Err(MCPError::Protocol(format!("Error: {:?}", error)))
+            }
+            _ => {
+                Err(MCPError::Protocol("Invalid response".to_string()))
+            }
+        }
+    }
+
     pub fn call_tool<P: Serialize + Send + Sync, R: DeserializeOwned + Send + Sync>(
         &mut self,
         tool_name: &str,
@@ -154,7 +185,7 @@ impl Client {
     ) -> Result<R, MCPError> {
         let tool_call_request = JSONRPCRequest::new(
             self.next_request_id(),
-            tool_name.to_string(),
+            "tools/call".to_string(),
             Some(serde_json::json!({
                 "name": tool_name,
                 "parameters": serde_json::to_value(params)?,
@@ -174,6 +205,7 @@ impl Client {
         match response {
             JSONRPCMessage::Response(resp) => {
                 let result = resp.result;
+                println!("@ {:?}",result);
                 let result = result.get("result").ok_or_else(||{
                     MCPError::Protocol("Missing 'result' field in response".to_string())
                 })?;
@@ -319,8 +351,9 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
+    use tungstenite::protocol;
 
-    use crate::{support::definition::McpLayer, transport::stdio};
+    use crate::{executor::ServerExecutor, schema::common::{Tool, ToolInputSchema}, server::{Server, ServerConfig}, support::definition::McpLayer, transport::stdio};
 
     use super::*;
     #[test]
@@ -336,71 +369,70 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_outbound() {
-        let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new("abc",true).create();
-        client.add_transport_layer(layer0);
-        let a = client.build();
-        println!("{:?}", a);
-    }
-
-    #[test]
-    fn test_handle_inbound() {
-        let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new("abc",true).create();
-        client.add_transport_layer(layer0);
-        let a = client.build();
-        println!("{:?}", a);
-    }
-
-
-    #[test]
     fn test_client() {
+        //init dummy server
+        let config = ServerConfig::new()
+            .with_name("MCP Server")
+            .with_version("1.0.0")
+            .with_tools(Tool {
+                name: "test_tool".to_string(),
+                input_schema: ToolInputSchema{
+                    r#type: "object".to_string(),
+                    properties: None,
+                    required: None,
+                },
+                description: None,
+            });
+
+        let mut server = Server::new(config);
+        let _ = server.register_tool_handler("test_tool".to_string(), move |input|{
+            println!("Tool called with input: {:?}", input);
+            Ok(serde_json::json!({
+                "result": "success"
+            }))
+        });
+
+        let server_transport = stdio::StdioTransport::new("abc",true).create();
+        server.add_transport_layer(server_transport);
+        server.start().unwrap();
+        server.build();
+        
+        //new server executor
+        let mut server_executor = ServerExecutor::new();
+        let _ = server_executor.start(server);
+
+
+        //init client
         let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new("abc",true).create();
+        let client = client.with_timeout(Duration::from_secs(3));
+        let layer0 = stdio::StdioTransport::new("abc",false).create();
         client.add_transport_layer(layer0);
-        let result = client.build();
+        client.build();
 
-        assert_eq!(result, ());
-    }
+        let init_result =  client.initialize().unwrap();
 
-    #[test]
-    fn test_client_with_timeout() {
-        let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new("abc",true).create();
-        client.add_transport_layer(layer0);
-        client.with_timeout(Duration::from_secs(5));
-        let result = client.build();
-        assert_eq!(result, ());
-    }
-
-    #[test]
-    fn test_client_with_timeout_recieve() {
-        //define struct with serde
-        #[derive(Serialize, Deserialize, Debug)]
-        struct TestStruct {
-            name: String,
-            age: u32,
+        if let Some(server_info) = init_result.get("serverInfo"){
+            if let (Some(server_name), Some(server_version),Some(protocol_version)) = (
+                server_info.get("name"), 
+                server_info.get("version"), 
+                init_result.get("protocolVersion")){
+                println!("Connnected to server: {} v{} with protocol version {}", 
+                    server_name.as_str().unwrap(), 
+                    server_version.as_str().unwrap(), 
+                    protocol_version.as_str().unwrap());
+            }
         }
+        
+        // list tools
+        let list_tool_result = client.list_tool().unwrap();
+        if let Some(tools) = list_tool_result.get("tools") {
+            println!("Tools: {:?}", tools);
+        }
+        
+        
+        let toolcall_result = client.call_tool::<(),String>("test_tool",&());
+        println!("Tools/call {:?}", toolcall_result);
 
-
-        let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new("abc",true).create();
-        client.add_transport_layer(layer0);
-        // client.with_timeout(Duration::from_secs(50));
-        let result = client.build();
-        let recieved =  client.recieve_with_timeout::<TestStruct>();
-        println!("{:?}", recieved.unwrap());
-    }
-
-    #[test]
-    fn test_client_with_timeout_recieve_bytes() {
-        let mut client = Client::new();
-        let layer0 = stdio::StdioTransport::new("abc",true).create();
-        client.add_transport_layer(layer0);
-        // client.with_timeout(Duration::from_secs(50));
-        let result = client.build();
-        let recieved =  client.recieve_bytes_with_timeout();
-        println!("{:?}", String::from_utf8(recieved.unwrap()).unwrap());
+        server_executor.stop();
     }
 }
