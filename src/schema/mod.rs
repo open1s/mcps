@@ -15,8 +15,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-pub mod common;
+pub mod schema;
+
 pub mod json_rpc;
 pub mod server;
 pub mod client;
+
+
 

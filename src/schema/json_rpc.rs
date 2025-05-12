@@ -15,150 +15,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The latest supported MCP protocol version
-pub const LATEST_PROTOCOL_VERSION: &str = "2025-03-26";
-/// The JSON-RPC version used by MCP
-pub const JSONRPC_VERSION: &str = "2.0";
-
-
-/// A uniquely identifying ID for a request in JSON-RPC.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RequestId {
-    String(String),
-    Number(i64),
-}
-
-/// JSON-RPC message types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum JSONRPCMessage {
-    Request(JSONRPCRequest),
-    Notification(JSONRPCNotification),
-    Response(JSONRPCResponse),
-    Error(JSONRPCError),
-}
-
-/// A request that expects a response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JSONRPCRequest {
-    pub jsonrpc: String,
-    pub id: RequestId,
-    pub method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<Value>,
-}
-
-
-/// A notification which does not expect a response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JSONRPCNotification {
-    pub jsonrpc: String,
-    pub method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<Value>,
-}
-
-/// A successful (non-error) response to a request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JSONRPCResponse {
-    pub jsonrpc: String,
-    pub id: RequestId,
-    pub result: Value,
-}
-
-/// A response to a request that indicates an error occurred.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JSONRPCError {
-    pub jsonrpc: String,
-    pub id: RequestId,
-    pub error: JSONRPCErrorObject,
-}
-
-/// Error object in a JSON-RPC error response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JSONRPCErrorObject {
-    /// The error type that occurred.
-    pub code: i32,
-
-    /// A short description of the error.
-    pub message: String,
-
-    /// Additional information about the error.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
-}
-
-/// Standard JSON-RPC error codes
-pub mod error_codes {
-    pub const PARSE_ERROR: i32 = -32700;
-    pub const INVALID_REQUEST: i32 = -32600;
-    pub const METHOD_NOT_FOUND: i32 = -32601;
-    pub const INVALID_PARAMS: i32 = -32602;
-    pub const INTERNAL_ERROR: i32 = -32603;
-}
-
-/// Base request interface
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Request {
-    pub method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<RequestParams>,
-}
-
-/// Request parameters
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<RequestMeta>,
-    #[serde(flatten)]
-    pub extra: DashMap<String, Value>,
-}
-
-/// Request metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestMeta {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub progress_token: Option<super::common::ProgressToken>,
-}
-
-/// Base notification interface
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Notification {
-    pub method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<NotificationParams>,
-}
-
-/// Notification parameters
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<DashMap<String, Value>>,
-    #[serde(flatten)]
-    pub extra: DashMap<String, Value>,
-}
-
-/// Base result interface
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Result {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub _meta: Option<DashMap<String, Value>>,
-    #[serde(flatten)]
-    pub extra: DashMap<String, Value>,
-}
-
-/// A response that indicates success but carries no data.
-pub type EmptyResult = Result;
+use super::schema::{JSONRPCError, JSONRPCErrorObject, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse, RequestId, JSONRPC_VERSION};
 
 // Helper functions for creating JSON-RPC messages
 impl JSONRPCRequest {
@@ -225,6 +84,8 @@ impl JSONRPCError {
 
 #[cfg(test)]
 mod tests {
+    use crate::schema::schema::JSONRPC_VERSION;
+
     use super::*;
 
     #[test]
