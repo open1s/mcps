@@ -4,8 +4,8 @@ use ibag::iBag;
 use log::info;
 use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
 use serde_json::Value;
-use crate::{schema::{client::{CallToolParams, ListToolsResult}, common::{Implementation, TextContent, Tool, ToolInputSchema}, json_rpc::{self, JSONRPCMessage, JSONRPCResponse, RequestId, LATEST_PROTOCOL_VERSION}, server::{CallToolResult, InitializeResult, ServerCapabilities, ToolResultContent, ToolsCapability}}, support::{definition::McpLayer, disruptor::{ DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
 
+use crate::{schema::schema::{CallToolParams, CallToolResult, Implementation, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListToolsResult, RequestId, ServerCapabilities, TextContent, Tool, ToolInputSchema, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION}, support::{definition::McpLayer, disruptor::{DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
 
 
 
@@ -319,7 +319,7 @@ impl Server {
             }
             Err(e) => {
                 let error = JSONRPCMessage::Error(
-                    json_rpc::JSONRPCError::new_with_details(
+                    JSONRPCError::new_with_details(
                         id, 
                         -32000, 
                         format!("Tool execution failed: {}", e), 

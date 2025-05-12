@@ -5,7 +5,7 @@ use rioc::{LayerChain, LayerResult, SharedLayer};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
-use crate::{schema::json_rpc::{JSONRPCMessage, JSONRPCRequest, RequestId, LATEST_PROTOCOL_VERSION}, support::{disruptor::{DisruptorFactory, DisruptorWriter}, ControlBus}, MCPError};
+use crate::{schema::schema::{JSONRPCMessage, JSONRPCRequest, RequestId, LATEST_PROTOCOL_VERSION}, support::{disruptor::DisruptorWriter, ControlBus}, MCPError};
 
 
 #[derive(Clone)]
@@ -350,10 +350,8 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use serde::Deserialize;
-    use tungstenite::protocol;
 
-    use crate::{executor::ServerExecutor, schema::common::{Tool, ToolInputSchema}, server::{Server, ServerConfig}, support::definition::McpLayer, transport::stdio};
+    use crate::{executor::ServerExecutor, schema::schema::{Tool, ToolInputSchema}, server::{Server, ServerConfig}, support::definition::McpLayer, transport::stdio};
 
     use super::*;
     #[test]
