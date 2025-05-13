@@ -3,14 +3,17 @@ use std::{ sync::Arc, time::Duration};
 use ibag::iBag;
 use rioc::{LayerChain, LayerResult, SharedLayer};
 use serde::{de::DeserializeOwned, Serialize};
-use serde_json::Value;
+use serde_json::{to_value, Value};
 
-use crate::{schema::schema::{JSONRPCMessage, JSONRPCRequest, RequestId, LATEST_PROTOCOL_VERSION}, support::{disruptor::DisruptorWriter, ControlBus}, MCPError};
+use crate::{schema::schema::{CallToolResult, ClientCapabilities, ClientRequest, ClientShutdownRequest, Implementation, InitializeParams, InitializeRequest, JSONRPCMessage, JSONRPCRequest, RequestId, RootsCapability, LATEST_PROTOCOL_VERSION}, support::{disruptor::DisruptorWriter, ControlBus}, MCPError};
+use crate::schema::client::{build_client_notification, build_client_request};
+use crate::schema::json_rpc::{mcp_json_param, mcp_param};
+use crate::schema::schema::{CallToolParams, CallToolRequest, ClientNotification, Cursor, InitializedNotification, InitializedNotificationParams, ListToolsRequest, PaginatedParams};
 
 #[derive(Clone)]
 pub struct Client {
-    next_request_id: i64,
     connected: bool,
+    next_request_id: i64,
     timeout_duration: Option<Duration>,
     notify: Arc<ControlBus>,
     chain: iBag<LayerChain>,
@@ -114,18 +117,29 @@ impl Client {
     }
 
     pub fn initialize(&mut self) -> Result<Value, MCPError> {
-        let initial_request = JSONRPCRequest::new(
-            self.next_request_id(),
-            "initialize".to_string(),
-            Some(serde_json::json!({
-                "protocol_version": LATEST_PROTOCOL_VERSION,
-            }))
-        );
+        let initial_params = InitializeParams {
+            protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
+            client_info: Implementation {
+                name: "MCP Client".to_string(),
+                version: "1.0.0".to_string(),
+            },
+            capabilities: ClientCapabilities {
+               experimental: None,
+               roots: Some(RootsCapability{
+                 list_changed: Some(false),
+               }),
+               sampling: None,
+            },
+        };
 
-        let message = JSONRPCMessage::Request(initial_request);
+        let initial_request = InitializeRequest::new(initial_params);
+        let client_request = ClientRequest::Initialize(initial_request);
+
+        let request_id = self.next_request_id();
+        let req = build_client_request(request_id.clone(), client_request);
 
         let payload = rioc::PayLoad{
-            data: Some(serde_json::to_string(&message).unwrap()),
+            data: mcp_json_param(&req),
             ctx: None
         };
 
@@ -136,6 +150,24 @@ impl Client {
         let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
         match response {
             JSONRPCMessage::Response(response) => {
+                //response with notification
+                let notification = InitializedNotification::new(
+                   InitializedNotificationParams{
+                        _meta: None,
+                    }
+                );
+
+                let notification = ClientNotification::Initialized(notification);
+                let notify = build_client_notification(notification);
+                let payload = rioc::PayLoad{
+                    data: mcp_json_param(&notify),
+                    ctx: None
+                };
+                //send initial request to server
+                let _ = self.handle_outbound(Some(payload));
+
+                assert!(response.id == request_id);
+
                 Ok(response.result)
             }
             JSONRPCMessage::Error(error) => {
@@ -147,18 +179,21 @@ impl Client {
         }
     }
     
-    pub fn list_tool(&mut self) -> Result<Value, MCPError> {
-        let list_tool_request = JSONRPCRequest::new(
-            self.next_request_id(),
-            "tools/list".to_string(),
-            None
-        );
+    pub fn list_tool(&mut self, cursor: Option<Cursor>) -> Result<Value, MCPError> {
+        let list_tool_req = ListToolsRequest::new(Some(
+            PaginatedParams{
+                cursor,
+            }
+        ));
 
-        let message = JSONRPCMessage::Request(list_tool_request);
+        let req = ClientRequest::ListTools(list_tool_req);
+        let request_id = self.next_request_id();
+        let req = build_client_request(request_id.clone(), req);
         let payload = rioc::PayLoad{
-            data: Some(serde_json::to_string(&message).unwrap()),
+            data: mcp_json_param(&req),
             ctx: None
         };
+
         //send initial request to server
         let _ = self.handle_outbound(Some(payload));
 
@@ -166,6 +201,7 @@ impl Client {
         let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
         match response {
             JSONRPCMessage::Response(resp) => {
+                assert!(resp.id == request_id);
                 Ok(resp.result)
             }
             JSONRPCMessage::Error(error) => {
@@ -177,23 +213,21 @@ impl Client {
         }
     }
 
-    pub fn call_tool<P: Serialize + Send + Sync, R: DeserializeOwned + Send + Sync>(
+    pub fn call_tool(
         &mut self,
-        tool_name: &str,
-        params: &P,
-    ) -> Result<R, MCPError> {
-        let tool_call_request = JSONRPCRequest::new(
-            self.next_request_id(),
-            "tools/call".to_string(),
-            Some(serde_json::json!({
-                "name": tool_name,
-                "parameters": serde_json::to_value(params)?,
-            })),
+        params: CallToolParams,
+    ) -> Result<CallToolResult, MCPError> {
+        let call_tool_req = CallToolRequest::new(
+            params
         );
 
-        let message = JSONRPCMessage::Request(tool_call_request);
+        let req = ClientRequest::CallTool(call_tool_req);
+        let request_id = self.next_request_id();
+        let req = build_client_request(request_id.clone(), req);
+
+
         let payload = rioc::PayLoad{
-            data: Some(serde_json::to_string(&message).unwrap()),
+            data: mcp_json_param(&req),
             ctx: None
         };
         //send tool call request to server
@@ -203,11 +237,8 @@ impl Client {
         let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
         match response {
             JSONRPCMessage::Response(resp) => {
+                assert_eq!(resp.id,request_id);
                 let result = resp.result;
-                println!("@ {:?}",result);
-                let result = result.get("result").ok_or_else(||{
-                    MCPError::Protocol("Missing 'result' field in response".to_string())
-                })?;
                 serde_json::from_value(result.clone()).map_err(MCPError::Serialization)
             }
             JSONRPCMessage::Error(error) => {
@@ -221,15 +252,13 @@ impl Client {
 
 
     pub fn shutdown(&mut self) -> Result<(),MCPError> {
-        let shutdown_request = JSONRPCRequest::new(
-            self.next_request_id(),
-            "shutdown".to_string(),
-            None
-        );
+        let shutdown_req = ClientShutdownRequest::new();
 
-        let message = JSONRPCMessage::Request(shutdown_request);
+        let req = ClientRequest::Shutdown(shutdown_req);
+        let request_id = self.next_request_id();
+        let req = build_client_request(request_id.clone(), req);
         let payload = rioc::PayLoad{
-            data: Some(serde_json::to_string(&message).unwrap()),
+            data: Some(serde_json::to_string(&req).unwrap()),
             ctx: None
         };
 
@@ -239,7 +268,8 @@ impl Client {
          //wait for response
          let response = self.recieve_with_timeout::<JSONRPCMessage>()?;
          match response {
-             JSONRPCMessage::Response(_) => {
+             JSONRPCMessage::Response(resp) => {
+                 assert_eq!(resp.id,request_id);
                  Ok(())
              }
              JSONRPCMessage::Error(error) => {
@@ -300,11 +330,24 @@ impl Client {
         )
     }
 
+    pub fn add_trace_layer(&mut self, layer: SharedLayer) {
+        self.chain.with(|chain|{
+                chain.add_layer(layer);
+            }
+        )
+    }
+
     pub fn add_protocol_layer(&mut self, layer: SharedLayer) {
         self.chain.with(|chain|{
                 chain.add_layer(layer);
             }
         )
+    }
+
+    pub fn next_request_id(&mut self) -> RequestId {
+        self.next_request_id += 1;
+        let id = self.next_request_id;
+        RequestId::Number(id)
     }
 
     pub fn build(&mut self) {
@@ -338,19 +381,15 @@ impl Client {
             chain.add_layer(layer.unwrap());
         });
     }
-
-    pub fn next_request_id(&mut self) -> RequestId {
-        self.next_request_id += 1;
-        let id = self.next_request_id;
-        RequestId::Number(id)
-    }
 }
 
 
 #[cfg(test)]
 mod tests {
 
-    use crate::{executor::ServerExecutor, schema::schema::{Tool, ToolInputSchema}, server::{Server, ServerConfig}, support::definition::McpLayer, transport::stdio};
+    use dashmap::DashMap;
+
+    use crate::{executor::ServerExecutor, init_log, schema::schema::{Tool, ToolInputSchema}, server::{Server, ServerConfig}, support::definition::McpLayer, transport::{stdio, trace}};
 
     use super::*;
     #[test]
@@ -367,6 +406,8 @@ mod tests {
 
     #[test]
     fn test_client() {
+        //init log
+        init_log();
         //init dummy server
         let config = ServerConfig::new()
             .with_name("MCP Server")
@@ -385,7 +426,7 @@ mod tests {
         let _ = server.register_tool_handler("test_tool".to_string(), move |input|{
             println!("Tool called with input: {:?}", input);
             Ok(serde_json::json!({
-                "result": "success"
+                "result": "hello mcp client",
             }))
         });
 
@@ -404,6 +445,10 @@ mod tests {
         let client = client.with_timeout(Duration::from_secs(3));
         let layer0 = stdio::StdioTransport::new("abc",false).create();
         client.add_transport_layer(layer0);
+
+        //for debugging
+        client.add_trace_layer(trace::Tracer::new().create());
+
         client.build();
 
         let init_result =  client.initialize().unwrap();
@@ -421,15 +466,21 @@ mod tests {
         }
         
         // list tools
-        let list_tool_result = client.list_tool().unwrap();
+        let list_tool_result = client.list_tool(Some("0".to_string())).unwrap();
         if let Some(tools) = list_tool_result.get("tools") {
             println!("Tools: {:?}", tools);
         }
         
         
-        let toolcall_result = client.call_tool::<(),String>("test_tool",&());
+        let toolcall_result = client.call_tool(
+            CallToolParams{
+                name: "test_tool".to_string(),
+                arguments: None,
+            }
+        );
         println!("Tools/call {:?}", toolcall_result);
-
+        
+        client.shutdown();
         server_executor.stop();
     }
 }

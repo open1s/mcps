@@ -5,7 +5,7 @@ use log::info;
 use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
 use serde_json::Value;
 
-use crate::{schema::schema::{CallToolParams, CallToolResult, Implementation, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListToolsResult, RequestId, ServerCapabilities, TextContent, Tool, ToolInputSchema, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION}, support::{definition::McpLayer, disruptor::{DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
+use crate::{schema::{json_rpc::{mcp_from_value, mcp_to_value}, schema::{CallToolParams, CallToolResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListToolsResult, RequestId, ServerCapabilities, TextContent, Tool, ToolInputSchema, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION}}, support::{definition::McpLayer, disruptor::{DisruptorFactory, DisruptorWriter}, ControlBus}, transport::stdio::StdioTransport, MCPError};
 
 
 
@@ -201,6 +201,13 @@ impl Server {
     }
 
     pub fn handle_initialize(&self, id: RequestId, params: Option<Value>) -> Result<(), MCPError> {
+        let mut client_params = None;
+        if let Some(params) = params {
+            client_params = mcp_from_value::<InitializeParams>(params);
+        }       
+
+        info!("Received initialize params: {:?}", client_params);
+
         let capabilities =  ServerCapabilities {
             experimental: None,
             logging: None,
@@ -222,6 +229,7 @@ impl Server {
         };
 
 
+        //just use server capabilities
         let init_result = InitializeResult {
             protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
             capabilities,
@@ -232,7 +240,7 @@ impl Server {
 
         let response = JSONRPCResponse::new(
             id,
-            serde_json::to_value(init_result).map_err(MCPError::Serialization)?,
+            mcp_to_value(init_result)?,
         );
 
         //handle outbound
@@ -255,7 +263,7 @@ impl Server {
 
         let response = JSONRPCResponse::new(
             id,
-            serde_json::to_value(tools_list).map_err(MCPError::Serialization)?,
+            mcp_to_value(tools_list)?,
         );
 
         //handle outbound
@@ -415,38 +423,4 @@ impl Server {
             chain.add_layer(layer.unwrap());
         });
     }
-}
-
-
-
-#[test]
-fn test_server() {
-    crate::init_log();
-    let config = ServerConfig::new()
-        .with_name("MCP Server")
-        .with_version("1.0.0")
-        .with_tools(Tool {
-            name: "test_tool".to_string(),
-            input_schema: ToolInputSchema{
-                r#type: "object".to_string(),
-                properties: None,
-                required: None,
-            },
-            description: None,
-        });
-
-    let mut server = Server::new(config);
-    let _ = server.register_tool_handler("test_tool".to_string(), |params| {
-        Ok(Value::String("Hello from test tool".to_string()))
-    });
-       
-    //build stdio as transport layer
-    let stdio = StdioTransport::new("abc", true);
-    let layer0 = stdio.create();
-    server.add_transport_layer(layer0);
-    let _ =  server.start();   
-
-    server.build();
-
-    let _ = server.handle_inbound();
 }

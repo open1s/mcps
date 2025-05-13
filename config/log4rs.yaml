@@ -11,6 +11,7 @@ root:
   level: info
   appenders:
     - stdout
+    - requests
 loggers:
   app::backend::db:
     level: info
