@@ -220,12 +220,14 @@ pub struct InitializeRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitializeParams {
     /// The latest version of the Model Context Protocol that the client supports.
+    #[serde(rename="protocolVersion")]
     pub protocol_version: String,
 
     /// Client capabilities
     pub capabilities: ClientCapabilities,
 
     /// Client information
+    #[serde(rename="clientInfo")]
     pub client_info: Implementation,
 }
 
@@ -234,6 +236,7 @@ pub struct InitializeParams {
 pub struct RootsCapability {
     /// Whether the client supports notifications for changes to the roots list.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename="listChanged")]
     pub list_changed: Option<bool>,
 }
 
@@ -330,6 +333,7 @@ pub struct InitializeResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitializedNotificationParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub _meta: Option<HashMap<String, String>>,
 }
 
@@ -1164,6 +1168,14 @@ pub enum JSONRPCMessage {
     Error(JSONRPCError),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientShutdownRequest {
+    pub method: String,
+}
+
+/// JSON-RPC message types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum ClientRequest {
     Initialize(InitializeRequest),
     Ping(PingRequest),
@@ -1178,6 +1190,7 @@ pub enum ClientRequest {
     CallTool(CallToolRequest),
     SetLevel(SetLevelRequest),
     Complete(CompleteRequest),
+    Shutdown(ClientShutdownRequest),
 }
 
 
@@ -1212,6 +1225,7 @@ pub enum ServerNotification{
 
 pub enum ServerResult{
     Result(Result),
+    EmptyResult(EmptyResult),
     InitializeRusult(InitializeResult),
     ListResourcesResult(ListResourcesResult),
     ListResourceTemplatesResult(ListResourceTemplatesResult),
