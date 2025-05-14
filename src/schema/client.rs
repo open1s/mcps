@@ -15,7 +15,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use super::schema::{CallToolParams, CallToolRequest, CancelledNotification, CancelledParams, ClientNotification, ClientRequest, ClientShutdownRequest, InitializeParams, InitializeRequest, InitializedNotification, InitializedNotificationParams, JSONRPCNotification, JSONRPCRequest, ListToolsRequest, PaginatedParams, PingRequest, RequestId};
+use super::schema::{CallToolParams, CallToolRequest, CancelledNotification, CancelledParams, ClientNotification, ClientRequest, ClientShutdownRequest, InitializeParams, InitializeRequest, InitializedNotification, InitializedNotificationParams, JSONRPCNotification, JSONRPCRequest, ListToolsRequest, PaginatedParams, PingRequest, RequestId, SetLevelParams, SetLevelRequest};
 use crate::schema::json_rpc::mcp_param;
 
 impl InitializeRequest {
@@ -85,6 +85,14 @@ impl CancelledNotification {
     }
 }
 
+impl SetLevelRequest {
+    pub fn new(params: SetLevelParams) -> Self {
+        Self {
+            method: "logging/setLevel".to_string(),
+            params
+        }
+    }
+}
 
 pub fn build_client_request(id: RequestId,param: ClientRequest) -> JSONRPCRequest {
     match param {

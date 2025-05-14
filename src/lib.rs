@@ -24,7 +24,6 @@ pub mod executor;
 
 
 pub use support::definition::error::MCPError;
-use log4rs;
 use log::info;
 
 pub fn init_log() {

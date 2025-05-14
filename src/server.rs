@@ -2,16 +2,12 @@ use crate::{
     schema::{
         json_rpc::{mcp_from_value, mcp_json_param, mcp_to_value},
         schema::{
-            CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams,
-            InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest,
-            ListToolsResult, RequestId, ServerCapabilities, ServerRequest, TextContent, Tool,
-            ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION,
+            CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION
         },
         server::build_server_request,
     },
     support::{
-        disruptor::{DisruptorFactory, DisruptorWriter},
-        ControlBus,
+        disruptor::{DisruptorFactory, DisruptorWriter}, logging::setup_logging, ControlBus
     },
     MCPError,
 };
@@ -95,6 +91,7 @@ pub struct Server {
 
 impl Server {
     pub fn new(config: ServerConfig) -> Self {
+        //check if config/log4rs.yaml exists
         Self {
             config,
             tool_handlers: Arc::new(Mutex::new(HashMap::new())),
@@ -315,6 +312,12 @@ impl Server {
 
                         if let Ok(mut tx) = tx {
                             tx.publish(|e| *e = 1);
+                        }
+                    }
+                    "logging/setLevel" => {
+                        info!("Received logging/setLevel request");
+                        if let Err(e) = self.handle_set_level(id, params) {
+                            log::error!("Failed to handle logging/setLevel request: {}", e);
                         }
                     }
                     _ => {
@@ -627,6 +630,21 @@ impl Server {
 
     fn handle_progress_notification(&mut self, params: Option<Value>) -> Result<Value, MCPError> {
         info!("Received progress notification: {:?}", params);
+        Ok(Value::Null)
+    }
+    
+    fn handle_set_level(&self, id: RequestId, params: Option<Value>) -> Result<Value, MCPError> {
+        info!("Received set level request: req: {:?} {:?}",id, params);
+
+        let params = params.ok_or_else(|| {
+            MCPError::Transport("Missing parameters in logging/setLevel request".to_string())
+        })?;
+
+        //parse the parameters as CallToolParams
+        let params: SetLevelParams = serde_json::from_value(params.clone())
+            .map_err(|e| MCPError::Transport(format!("Invalid set level parameters: {}", e)))?;
+        let level = params.level;
+        setup_logging(level);
         Ok(Value::Null)
     }
 }
