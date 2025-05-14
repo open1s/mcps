@@ -15,10 +15,77 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use super::{json_rpc::mcp_param, schema::{JSONRPCNotification, JSONRPCRequest, ListRootsRequest, RequestId, ServerNotification, ServerRequest}};
+
+impl ListRootsRequest {
+    pub fn new() -> Self {
+        Self {
+            method: "roots/list".to_string(),
+        }
+    }
+}
 
 
+pub fn build_server_request(id: RequestId, param: ServerRequest) -> JSONRPCRequest {
+    match param {
+        ServerRequest::Ping(req) => {
+            JSONRPCRequest::new(id,req.method,None)
+        },
+        ServerRequest::CreateMessageRequest(req) => {
+            JSONRPCRequest::new(id,req.method,mcp_param(&req.params))
+        },
+        ServerRequest::ListRootsRequest(req) => {
+            JSONRPCRequest::new(id,req.method,None)
+        },
+    }
+}
 
-
+pub fn build_server_notification(param: ServerNotification) -> JSONRPCNotification {
+    match param {
+        ServerNotification::CancelledNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                mcp_param(&req.params)
+            )
+        },
+        ServerNotification::ProgressNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                mcp_param(&req.params)
+            )
+        },
+        ServerNotification::ResourceListChangedNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                None
+            )
+        },
+        ServerNotification::ResourceUpdatedNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                mcp_param(&req.params)
+            )
+        },
+        ServerNotification::PromptListChangedNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                None
+            )
+        },
+        ServerNotification::ToolListChangedNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                None
+            )
+        },
+        ServerNotification::LoggingMessageNotification(req) => {
+            JSONRPCNotification::new(
+                req.method,
+                mcp_param(&req.params)
+            )
+        },
+    }
+}
 
 
 

@@ -1,4 +1,5 @@
 use disruptor::Producer;
+use log::info;
 
 use crate::{client::Client, server::Server, support::ControlBus};
 
@@ -37,7 +38,7 @@ impl ServerExecutor {
 
         self.started = true;
         let mut rx = self.bus.clone_rx().unwrap();
-        let handle = std::thread::spawn(move || {
+        let _ignored = std::thread::spawn(move || {
            loop {
                 let envent = rx.try_recv();
                 match envent {
@@ -50,7 +51,7 @@ impl ServerExecutor {
                     Err(_) => {}        
                 }
 
-                let result = server.handle_inbound();
+                let _ = server.serve();
            }
         });
 
@@ -82,12 +83,12 @@ impl ClientExecutor {
 
         self.started = true;
         let mut rx = self.bus.clone_rx().unwrap();
-        let handle = std::thread::spawn(move || {
+        let _handle = std::thread::spawn(move || {
            loop {
                 let envent = rx.try_recv();
                 match envent {
                     Ok(r) => {
-                        println!("!!! Received: {}", r);
+                        info!("Received: {}", r);
                         if r == 1 {
                             break;
                         }
@@ -95,11 +96,11 @@ impl ClientExecutor {
                     Err(_) => {}        
                 }
 
-                let _ = client.handle_inbound();
+                let _ = client.serve();
            }
         });
 
-        handle.join().map_err(|e| format!("Error executing client: {:?}", e))?;
+        // handle.join().map_err(|e| format!("Error executing client: {:?}", e))?;
 
         Ok("Client started".to_string())
     }
