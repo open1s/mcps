@@ -15,8 +15,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use super::schema::{CallToolParams, CallToolRequest, CancelledNotification, CancelledParams, ClientNotification, ClientRequest, ClientShutdownRequest, InitializeParams, InitializeRequest, InitializedNotification, InitializedNotificationParams, JSONRPCNotification, JSONRPCRequest, ListToolsRequest, PaginatedParams, PingRequest, RequestId};
 use crate::schema::json_rpc::mcp_param;
-use super::schema::{CallToolParams, CallToolRequest, CancelledNotification, ClientNotification, ClientRequest, ClientShutdownRequest, CompleteRequest, GetPromptRequest, InitializeParams, InitializeRequest, InitializedNotification, InitializedNotificationParams, JSONRPCNotification, JSONRPCRequest, ListPromptsRequest, ListResourceTemplatesRequest, ListResourcesRequest, ListToolsRequest, PaginatedParams, PingRequest, ProgressNotification, ReadResourceRequest, RequestId, RootsListChangedNotification, SetLevelRequest, SubscribeRequest, UnsubscribeRequest};
 
 impl InitializeRequest {
     /// Create a new InitializeRequest
@@ -68,7 +68,22 @@ impl ClientShutdownRequest {
     }
 }
 
+impl PingRequest {
+    pub fn new() -> Self {
+        Self {
+            method: "ping".to_string(),
+        }
+    }
+}
 
+impl CancelledNotification {
+    pub fn new(params: CancelledParams) -> Self {
+        Self {
+            method: "notifications/cancelled".to_string(),
+            params
+        }
+    }
+}
 
 
 pub fn build_client_request(id: RequestId,param: ClientRequest) -> JSONRPCRequest {

@@ -81,7 +81,7 @@ pub struct Result {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub _meta: Option<DashMap<String, Value>>,
     #[serde(flatten)]
-    pub extra: DashMap<String, Value>,
+    pub extra: Option<DashMap<String, Value>>,
 }
 
 pub type EmptyResult = Result;
