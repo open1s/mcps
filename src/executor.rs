@@ -1,7 +1,7 @@
 use disruptor::Producer;
 use log::info;
 
-use crate::{client::Client, server::Server, support::ControlBus};
+use crate::{client::{Client, ClientProvider}, server::Server, support::ControlBus};
 
 
 pub struct ServerExecutor{
@@ -76,7 +76,7 @@ impl ClientExecutor {
         });
     }
 
-    pub fn start(&mut self, client: Client) -> Result<String, String> {
+    pub fn start<T:  Default + ClientProvider + Clone + Send + 'static>(&mut self, client: Client<T>) -> Result<String, String> {
         if self.started {
             return Err("Client already started".to_string());
         }
