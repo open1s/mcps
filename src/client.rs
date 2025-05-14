@@ -1,5 +1,3 @@
-use chrono::Utc;
-use dashmap::DashMap;
 use disruptor::{Producer, Sequence};
 use ibag::iBag;
 use log::info;
@@ -17,23 +15,27 @@ use crate::schema::schema::{
     InitializedNotificationParams, ListToolsRequest, PaginatedParams,
 };
 use crate::{
-    schema::{
-        json_rpc::mcp_to_value,
-        schema::{
+    schema::schema::{
             CallToolResult, CancelledNotification, CancelledParams, ClientCapabilities,
-            ClientRequest, ClientShutdownRequest, EmptyResult, Implementation, InitializeParams,
-            InitializeRequest, JSONRPCMessage, JSONRPCResponse, PingRequest,
+            ClientRequest, ClientShutdownRequest, Implementation, InitializeParams,
+            InitializeRequest, JSONRPCMessage, PingRequest,
             RequestId, RootsCapability, LATEST_PROTOCOL_VERSION,
         },
-    },
     support::{
         disruptor::{DisruptorFactory, DisruptorWriter},
     },
     MCPError,
 };
 
+pub trait ClientProvider {
+    fn client_ping_response(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError>;
+    fn client_list_roots(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError>;
+    fn client_sampling_message(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError>;
+}
+
+
 #[derive(Clone)]
-pub struct Client {
+pub struct Client<T: ClientProvider + Default + Clone + Send + 'static> {
     is_initialized: bool,
     next_request_id: i64,
     timeout_duration: Option<Duration>,
@@ -41,9 +43,10 @@ pub struct Client {
     disruptor: Option<DisruptorWriter>,
     cached: Arc<Mutex<Vec<JSONRPCMessage>>>,
     current_request_id: Option<i64>,
+    provider: T,
 }
 
-impl Client {
+impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
     pub fn new() -> Self {
         Self {
             is_initialized: false,
@@ -53,6 +56,7 @@ impl Client {
             disruptor: None,
             cached: Arc::new(Mutex::new(Vec::new())),
             current_request_id: None,
+            provider: T::default(),
         }
     }
 
@@ -119,21 +123,15 @@ impl Client {
                 match method.as_str() {
                     "ping" => {
                         info!("Received ping request");
-                        if let Err(e) = self.handle_ping(id, params) {
-                            log::error!("Failed to handle ping request: {}", e);
-                        }
+                        self.provider.client_ping_response(id, params)?;
                     }
                     "roots/list" => {
                         info!("Received roots/list request");
-                        if let Err(e) = self.handle_list_roots(id, params) {
-                            log::error!("Failed to handle list roots request: {}", e);
-                        }
+                        self.provider.client_list_roots(id, params)?;
                     }
                     "sampling/createMessage" => {
                         info!("Received sampling/createMessage request");
-                        if let Err(e) = self.handle_sampling_message(id, params) {
-                            log::error!("Failed to handle create message request: {}", e);
-                        }
+                        self.provider.client_sampling_message(id, params)?;
                     }
                     _ => {
                         info!("Received unsupported method: {}", method);
@@ -456,44 +454,6 @@ impl Client {
             chain.add_layer(layer.unwrap());
         });
     }
-
-    fn handle_ping(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError> {
-        //get the current time as string
-        let timestamp = Utc::now().to_rfc3339();
-        let extra = DashMap::new();
-        extra.insert("timestamp".to_string(), mcp_to_value(timestamp).unwrap());
-        let result = EmptyResult {
-            _meta: None,
-            extra: Some(extra),
-        };
-
-        let response = JSONRPCResponse::new(id, serde_json::json!(result));
-
-        //handle outbound
-        let response = serde_json::to_string(&response).map_err(MCPError::Serialization)?;
-        if let Err(e) = self.handle_outbound(Some(rioc::PayLoad {
-            data: Some(response),
-            ctx: None,
-        })) {
-            log::error!("Failed to send ping response: {}", e);
-        }
-
-        Ok(())
-    }
-
-    fn handle_list_roots(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError> {
-        info!("Received root list: {:?}", id);
-        Ok(())
-    }
-
-    fn handle_sampling_message(
-        &self,
-        id: RequestId,
-        _params: Option<Value>,
-    ) -> Result<(), MCPError> {
-        info!("Received sample message: {:?}", id);
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -507,10 +467,27 @@ mod tests {
         transport::{stdio, trace},
     };
 
+    #[derive(Clone, Default)]
+    pub struct TestClientService;
+
+    impl ClientProvider for TestClientService {
+        fn client_ping_response(&self, _id: RequestId, _params: Option<Value>) -> Result<(), MCPError> {
+            Ok(())
+        }
+
+        fn client_list_roots(&self, _id: RequestId, _params: Option<Value>) -> Result<(), MCPError> {
+            Ok(())
+        }
+
+        fn client_sampling_message(&self, _id: RequestId, _params: Option<Value>) -> Result<(), MCPError> {
+            Ok(())
+        }
+    }
+
     use super::*;
     #[test]
     fn test_next_request_id() {
-        let mut client = Client::new();
+        let mut client = Client::<TestClientService>::new();
         let layer0 = stdio::StdioTransport::new("abc", true).create();
 
         client.add_transport_layer(layer0);
@@ -556,7 +533,7 @@ mod tests {
         let _ = server_executor.start(server);
 
         //init client
-        let mut client = Client::new();
+        let mut client = Client::<TestClientService>::new();
         let client = client.with_timeout(Duration::from_secs(3));
         let layer0 = stdio::StdioTransport::new("abc", false).create();
         client.add_transport_layer(layer0);

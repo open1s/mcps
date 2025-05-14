@@ -73,6 +73,10 @@ impl Default for ServerConfig {
     }
 }
 
+pub trait ServerProvider { 
+}
+
+
 pub type ToolHandler = Box<dyn Fn(Value) -> Result<Value, MCPError> + Send>;
 
 #[derive(Clone)]
