@@ -1,8 +1,8 @@
 use crate::{
     schema::{
-        json_rpc::{mcp_from_value, mcp_json_param, mcp_to_value},
+        json_rpc::{mcp_from_value, mcp_json_param, mcp_param, mcp_to_value},
         schema::{
-            CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION
+            error_codes, CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION
         },
         server::build_server_request,
     },
@@ -69,6 +69,14 @@ impl Default for ServerConfig {
     }
 }
 
+#[derive(Clone,PartialEq)]
+pub enum ServerState {
+    Initialized,
+    Running,
+    Uninitialized,
+    Shutdown,
+}
+
 pub trait ServerProvider { 
 }
 
@@ -87,6 +95,7 @@ pub struct Server {
     cached: Arc<Mutex<Vec<JSONRPCMessage>>>,
     next_request_id: i64,
     timeout_duration: Option<Duration>,
+    state: ServerState,
 }
 
 impl Server {
@@ -103,6 +112,7 @@ impl Server {
             current_request_id: None,
             cached: Arc::new(Mutex::new(Vec::new())),
             timeout_duration: None,
+            state: ServerState::Uninitialized,
         }
     }
 
@@ -293,18 +303,33 @@ impl Server {
                     }
                     "tools/list" => {
                         info!("Received tools/list request");
+                        if let Err(e) = self.check_state(id.clone()) {
+                            log::error!("Failed to check state: {}", e);
+                            return Err(e);
+                        }
+
                         if let Err(e) = self.handle_list_tools(id, params) {
                             log::error!("Failed to handle tools/list request: {}", e);
                         }
                     }
                     "tools/call" => {
                         info!("Received tools/call request");
+                        if let Err(e) = self.check_state(id.clone()) {
+                            log::error!("Failed to check state: {}", e);
+                            return Err(e);
+                        }
+
                         if let Err(e) = self.handle_tool_call(id, params) {
                             log::error!("Failed to handle tools/call request: {}", e);
                         }
                     }
                     "shutdown" => {
                         info!("Received shutdown request");
+                        if let Err(e) = self.check_state(id.clone()) {
+                            log::error!("Failed to check state: {}", e);
+                            return Err(e);
+                        }
+
                         if let Err(e) = self.handle_shutdown(id, params) {
                             log::error!("Failed to handle shutdown request: {}", e);
                         }
@@ -316,6 +341,11 @@ impl Server {
                     }
                     "logging/setLevel" => {
                         info!("Received logging/setLevel request");
+                        if let Err(e) = self.check_state(id.clone()) {
+                            log::error!("Failed to check state: {}", e);
+                            return Err(e);
+                        }
+
                         if let Err(e) = self.handle_set_level(id, params) {
                             log::error!("Failed to handle logging/setLevel request: {}", e);
                         }
@@ -378,7 +408,36 @@ impl Server {
         Ok(())
     }
 
-    fn handle_initialize(&self, id: RequestId, params: Option<Value>) -> Result<(), MCPError> {
+
+    fn check_state(&self,id: RequestId) -> Result<(), MCPError> {
+        if self.state != ServerState::Running {
+            //send error response
+            let error = JSONRPCMessage::Error(JSONRPCError::new_with_details(
+                id.clone(),
+                error_codes::INVALID_REQUEST,
+                "Server not initialized".to_string(),
+                None,
+            ));
+
+            let response = JSONRPCResponse::new(id, mcp_param(&error).unwrap());
+            //handle outbound
+            let response = serde_json::to_string(&response).map_err(MCPError::Serialization)?;
+            if let Err(e) = self.handle_outbound(Some(rioc::PayLoad {
+                data: Some(response),
+                ctx: None,
+            })) {
+                log::error!("Failed to send error response: {}", e);
+            }
+
+
+            return Err(MCPError::Transport(
+                "Server not initialized".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn handle_initialize(&mut self, id: RequestId, params: Option<Value>) -> Result<(), MCPError> {
         let mut client_params = None;
         if let Some(params) = params {
             client_params = mcp_from_value::<InitializeParams>(params);
@@ -423,6 +482,8 @@ impl Server {
         })) {
             log::error!("Failed to send initialize response: {}", e);
         }
+
+        self.state = ServerState::Initialized;
 
         Ok(())
     }
@@ -625,6 +686,7 @@ impl Server {
 
     fn handle_initialize_notification(&mut self, params: Option<Value>) -> Result<Value, MCPError> {
         info!("Received initialize notification: {:?}", params);
+        self.state = ServerState::Running;
         Ok(Value::Null)
     }
 
