@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crate::schema::client::{build_client_notification, build_client_request};
+use crate::schema::{client::{build_client_notification, build_client_request}, schema::{LoggingLevel, SetLevelParams, SetLevelRequest}};
 use crate::schema::json_rpc::mcp_json_param;
 use crate::schema::schema::{
     CallToolParams, CallToolRequest, ClientNotification, Cursor, InitializedNotification,
@@ -423,6 +423,25 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
         RequestId::Number(id)
     }
 
+    pub fn set_log_level(&mut self, level: LoggingLevel) {
+        let request = SetLevelRequest::new(SetLevelParams{
+            level,
+        });
+
+        let request_id = self.next_request_id();
+        let req = ClientRequest::SetLevel(request);
+        let req = build_client_request(request_id.clone(), req);
+        let payload = rioc::PayLoad {
+            data: mcp_json_param(&req),
+            ctx: None,
+        };
+        //send initial request to server
+        let _ = self.handle_outbound(Some(payload));
+
+        //wait for response
+        let _ = self.recieve_with_timeout();
+    }
+
     pub fn build(&mut self) {
         let client_cloned = self.clone();
         let builder = rioc::LayerBuilder::new();
@@ -466,6 +485,7 @@ mod tests {
         support::definition::McpLayer,
         transport::{stdio, trace},
     };
+    use crate::support::logging::setup_logging;
 
     #[derive(Clone, Default)]
     pub struct TestClientService;
@@ -581,5 +601,16 @@ mod tests {
         let _= client.shutdown();
         let _= client_executor.stop();
         let _= server_executor.stop();
+    }
+    
+    #[test]
+    pub fn test_setup_logging(){
+        init_log();
+        
+        info!("Starting test");
+        setup_logging(LoggingLevel::Info);
+        info!("Starting test");
+        setup_logging(LoggingLevel::Alert);
+        info!("Starting test");
     }
 }
