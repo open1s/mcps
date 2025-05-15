@@ -1,4 +1,84 @@
+use std::{fs::OpenOptions, sync::{Arc, Mutex}};
+use log::{LevelFilter, Log, Metadata, Record};
 use crate::schema::schema::LoggingLevel;
+use std::io::Write;
+
+pub trait Appender: Send + Sync{
+    fn append(&self, record: &Record);
+}
+
+#[derive(Debug, Clone)]
+pub struct ConsoleAppender;
+impl Appender for ConsoleAppender {
+    fn append(&self, record: &Record) {
+        println!("[{}] {} -> {}", record.level(),record.metadata().target(), record.args());
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FileAppender {
+    file: Arc<Mutex<std::fs::File>>,
+}
+
+impl FileAppender {
+    pub fn new(path: &str) -> Self {
+        //if parent directory does not exist, create it
+        if let Some(parent_dir) = std::path::Path::new(path).parent() {
+            if !parent_dir.exists() {
+                std::fs::create_dir_all(parent_dir).ok();
+            }
+        }
+        let file = OpenOptions::new().create(true).append(true).open(path).unwrap();
+        Self { file: Arc::new(Mutex::new(file)) }
+    }
+}
+
+impl Appender for FileAppender {
+    fn append(&self, record: &Record) {
+        let mut file = self.file.lock().unwrap();
+        writeln!(file, "[{}] {} -> {}", record.level(),record.metadata().target(), record.args()).ok();
+    }
+}
+
+
+pub struct McpInterceptorLogger {
+    appenders: Vec<Arc<dyn Appender>>,
+    level_filter: LevelFilter,
+}
+
+impl McpInterceptorLogger {
+    pub fn new(appenders: Vec<Arc<dyn Appender>>, level_filter: LevelFilter) -> Self {
+        Self { appenders, level_filter }
+    }
+
+    pub fn init()  {
+        let mut appenders: Vec<Arc<dyn Appender>> = vec![];
+
+        appenders.push(Arc::new(ConsoleAppender));
+        appenders.push(Arc::new(FileAppender::new("log/requests.log")));
+        let logger = McpInterceptorLogger::new(appenders, LevelFilter::Info);
+
+        log::set_boxed_logger(Box::new(logger)).expect("failed to set logger");
+        log::set_max_level(log::LevelFilter::Info);
+    }
+}
+
+impl Log for McpInterceptorLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= self.level_filter
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            for appender in &self.appenders {
+                appender.append(record);
+            }
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 
 pub fn setup_logging(level: LoggingLevel){
     let log_level = match level {

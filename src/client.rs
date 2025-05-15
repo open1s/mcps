@@ -521,6 +521,7 @@ mod tests {
     fn test_client() {
         //init log
         init_log();
+
         //init dummy server
         let config = ServerConfig::new()
             .with_name("MCP Server")
