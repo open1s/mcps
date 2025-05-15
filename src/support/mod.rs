@@ -21,4 +21,5 @@ pub mod definition;
 pub mod control_bus;
 pub mod shared_memory;
 pub mod logging;
+pub mod sessons;
 pub use control_bus::ControlBus;

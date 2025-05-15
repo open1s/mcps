@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use crate::schema::schema::SESSION_ID_KEY;
 use crate::support::definition::McpLayer;
 use crate::support::shared_memory::{MemoryDuplex, SharedMemory};
 use crate::MCPError;
@@ -94,7 +95,8 @@ impl StdioTransport {
             data: HashMap::new(),
         };
 
-        ctx.data.insert("sessionId".to_string(), "123".to_string());
+        //we need a way 
+        ctx.data.insert(SESSION_ID_KEY.to_owned(), "local".to_string());
         let payload = String::from_utf8(data).map_err(|e| MCPError::Transport(format!("Failed to convert to string: {}", e)))?;
         Ok(PayLoad{
             data: Some(payload),
