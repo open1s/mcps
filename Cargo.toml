@@ -37,7 +37,7 @@ path = "src/main.rs"
 
 # Core dependencies for the mcpr library
 [dependencies]
-log = { version = "0.4"}
+log = { version = "0.4", features = ["std"]}
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
@@ -48,7 +48,8 @@ disruptor = {version = "3.3"}
 lombok = { version = "0.4" }
 nbus = { version = "2.4" }
 bytes = {version = "1"}
-memmap2 = "0.9"
+memmap2 = {version = "0.9"}
+once_cell = { version = "1.21"}
 ibuf = { version = "0.3"}
 ibag = { version = "0.3" }
 rioc = { version = "0.2" }
@@ -57,8 +58,6 @@ irgo = { version = "0.2"}
 imacro = { version = "0.4" }
 chrono = {version = "0.4"}
 
-
-env_logger = "0.10"
 clap = { version = "4.4", features = ["derive"] }
 futures = "0.3"
 url = "2.2.2" 
@@ -69,8 +68,9 @@ reqwest = { version = "0.12", features = [
     "blocking",
 ] }
 rand = "0"
-tungstenite = { version = "0.20", features = ["native-tls"] }
 libc = "0.2.171"
 async-trait = "0.1.88"
 tokio = "1.44.1"
+tungstenite = "0.26.2"
+
 

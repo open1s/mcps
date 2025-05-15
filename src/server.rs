@@ -2,12 +2,12 @@ use crate::{
     schema::{
         json_rpc::{mcp_from_value, mcp_json_param, mcp_param, mcp_to_value},
         schema::{
-            error_codes, CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION
+            error_codes, CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
         },
         server::build_server_request,
     },
     support::{
-        disruptor::{DisruptorFactory, DisruptorWriter}, logging::setup_logging, ControlBus
+        disruptor::{DisruptorFactory, DisruptorWriter}, logging::setup_logging, sessons::{SessionStore, SESSION_STORE}, ControlBus
     },
     MCPError,
 };
@@ -16,7 +16,7 @@ use dashmap::DashMap;
 use disruptor::{Producer, Sequence};
 use ibag::iBag;
 use log::info;
-use rioc::{LayerChain, LayerResult, PayLoad, SharedLayer};
+use rioc::{ChainContext, LayerChain, LayerResult, PayLoad, SharedLayer};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -243,9 +243,12 @@ impl Server {
             DisruptorFactory::create(move |e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
                 if let Some(data) = &e.data {
                     info!("Received message: {:?}", data);
+
+                    let ctx = e.ctx.clone();
+
                     match serde_json::from_str::<JSONRPCMessage>(&data) {
                         Ok(message) => {
-                            if let Err(err) = server.handle_message(message) {
+                            if let Err(err) = server.handle_message(ctx,message) {
                                 log::error!("handle_message failed: {}", err);
                             }
                         }
@@ -281,7 +284,7 @@ impl Server {
         Ok(())
     }
 
-    fn handle_message(&mut self, message: JSONRPCMessage) -> Result<(), MCPError> {
+    fn handle_message(&mut self, ctx: Option<ChainContext> ,message: JSONRPCMessage) -> Result<(), MCPError> {
         match message {
             JSONRPCMessage::Request(req) => {
                 let id = req.id.clone();
@@ -294,6 +297,15 @@ impl Server {
                         if let Err(e) = self.handle_initialize(id, params) {
                             log::error!("Failed to handle initialize request: {}", e);
                         }
+                        //create and store the session
+                        let mut session_id = "local".to_string();
+
+                        if let Some(ctx) = ctx {
+                            if let Some(session) = ctx.data.get(SESSION_ID_KEY) {
+                                session_id = session.to_string();
+                                SESSION_STORE.create_session(session_id, 60*30);
+                            }
+                        } 
                     }
                     "ping" => {
                         info!("Received ping request");
@@ -346,7 +358,14 @@ impl Server {
                             return Err(e);
                         }
 
-                        if let Err(e) = self.handle_set_level(id, params) {
+                        let mut session_id = "local".to_string();
+
+                        if let Some(ctx) = ctx {
+                            if let Some(session) = ctx.data.get(SESSION_ID_KEY) {
+                                session_id = session.to_string();
+                            }
+                        }
+                        if let Err(e) = self.handle_set_level(id,session_id, params) {
                             log::error!("Failed to handle logging/setLevel request: {}", e);
                         }
                     }
@@ -695,7 +714,7 @@ impl Server {
         Ok(Value::Null)
     }
     
-    fn handle_set_level(&self, id: RequestId, params: Option<Value>) -> Result<Value, MCPError> {
+    fn handle_set_level(&self, id: RequestId, session_id: String,params: Option<Value>) -> Result<Value, MCPError> {
         info!("Received set level request: req: {:?} {:?}",id, params);
 
         let params = params.ok_or_else(|| {
@@ -707,6 +726,13 @@ impl Server {
             .map_err(|e| MCPError::Transport(format!("Invalid set level parameters: {}", e)))?;
         let level = params.level;
         setup_logging(level);
+
+        //get session id
+        let s = SESSION_STORE.get_session(session_id);
+        if let Some(mut s) = s {
+            s.set_item("debug_level".to_string(),serde_json::to_value(1)?)
+        }
+
         Ok(Value::Null)
     }
 }

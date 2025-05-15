@@ -8,6 +8,9 @@ use serde_json::Value;
 pub const LATEST_PROTOCOL_VERSION: &str = "2025-03-26";
 /// The JSON-RPC version used by MCP
 pub const JSONRPC_VERSION: &str = "2.0";
+/// MCP session identifier key in the context data 
+pub const SESSION_ID_KEY: &str = "sessionId";
+
 
 /// Standard JSON-RPC error codes
 pub mod error_codes {

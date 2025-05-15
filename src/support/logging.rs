@@ -58,7 +58,7 @@ impl McpInterceptorLogger {
         appenders.push(Arc::new(FileAppender::new("log/requests.log")));
         let logger = McpInterceptorLogger::new(appenders, LevelFilter::Info);
 
-        log::set_boxed_logger(Box::new(logger)).expect("failed to set logger");
+        log::set_boxed_logger(Box::new(logger)).unwrap();
         log::set_max_level(log::LevelFilter::Info);
     }
 }
