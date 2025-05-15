@@ -24,17 +24,10 @@ pub mod executor;
 
 
 pub use support::definition::error::MCPError;
-use log::info;
+use crate::support::logging::McpInterceptorLogger;
 
-pub fn init_log() {
-    //check if config/log4rs.yaml exists
-    let config_path = std::path::Path::new("config/log4rs.yaml");
-    if !config_path.exists() {
-       return;
-    }
-
-    log4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
-    info!("MCP Service booting up");
+pub fn init_log(){
+    let logger = McpInterceptorLogger::init();
 }
 
 

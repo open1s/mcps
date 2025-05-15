@@ -19,6 +19,7 @@
 
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -28,7 +29,7 @@ use crate::MCPError;
 use bytes::BufMut;
 use disruptor::{Producer, Sequence};
 use rand::rand_core::le;
-use rioc::{Direction, Layer, LayerBuilder, LayerResult, PayLoad, SharedLayer};
+use rioc::{ChainContext, Direction, Layer, LayerBuilder, LayerResult, PayLoad, SharedLayer};
 use crate::support::ControlBus;
 use crate::support::disruptor::{DisruptorProcessorCallback, DisruptorWriter};
 use crate::support::disruptor::DisruptorFactory;
@@ -89,10 +90,15 @@ impl StdioTransport {
         let bytes_read = self.pipe.read(&mut data)
             .map_err(|e| MCPError::Transport(format!("Failed to read from shared memory: {}", e)))?;
 
+        let mut ctx = ChainContext{
+            data: HashMap::new(),
+        };
+
+        ctx.data.insert("sessionId".to_string(), "123".to_string());
         let payload = String::from_utf8(data).map_err(|e| MCPError::Transport(format!("Failed to convert to string: {}", e)))?;
         Ok(PayLoad{
             data: Some(payload),
-            ctx: None,
+            ctx: Some(ctx),
         })
     }
 }
