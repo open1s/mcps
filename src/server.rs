@@ -23,6 +23,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use crate::support::job::JobTask;
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -646,9 +647,13 @@ impl Server {
         let handlers = self.tool_handlers.lock().unwrap();
         if let Some(handler) = handlers.get(&tool) {
             //TODO: create job, and execute it
+            let job: JobTask<String,String> = JobTask::new(params,|params,sender| {
+                
+            });
             
-            let result = handler(params);
-            return result;
+            // let result = handler(params);
+            // return result;
+            Ok(Value::Null)
         } else {
             return Err(MCPError::Transport(format!(
                 "No handler found for tool: {}",
