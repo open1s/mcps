@@ -303,7 +303,6 @@ impl Server {
                         //create and store the session
                         let mut session_id = "local".to_string();
                         if let Some(ctx) = ctx {
-                            
                             if let Some(session) = ctx.data.get(SESSION_ID_KEY) {
                                 session_id = session.to_string();
                                 SESSION_STORE.create_session(session_id, 60*30);
@@ -649,8 +648,11 @@ impl Server {
         let handlers = self.tool_handlers.lock().unwrap();
         if let Some(handler) = handlers.get(&tool).cloned() {
             let job: JobTask<String,i32> = JobTask::new(params,move |params,sender| {
-                let result = handler(params,sender);
+                let _result = handler(params,sender);
             });
+
+            //need process session state, need use ctx to read get such info
+            //self.handle_outbound();
 
             while let Some(event) = job.recv() {
                 match event {
