@@ -49,6 +49,8 @@ lombok = { version = "0.4" }
 nbus = { version = "2.4" }
 bytes = {version = "1"}
 memmap2 = {version = "0.9"}
+may = "0.3.51"
+crossbeam = {version = "0.8"}
 once_cell = { version = "1.21"}
 ibuf = { version = "0.3"}
 ibag = { version = "0.3" }
