@@ -9,6 +9,7 @@ use std::time::Duration;
 #[derive(Debug)]
 pub enum TaskEvent<T, E> {
     Data(T),         // 任务发送的数据项
+    Progress((u8,u32)),    // 任务进度更新
     Done,            // 任务正常完成
     Cancelled,       // 任务被取消
     Error(E),        // 任务返回错误
@@ -130,6 +131,9 @@ mod tests {
                     TaskEvent::Cancelled => println!("Task cancelled"),
                     TaskEvent::Error(e) => println!("Error: {}", e),
                     TaskEvent::Panic(p) => println!("Panic: {}", p),
+                    TaskEvent::Progress(p) => {
+                        println!("Progress: {}", p.0);
+                    }
                 }
             }
         });
