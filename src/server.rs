@@ -646,7 +646,6 @@ impl Server {
     fn execute_tool(&self, tool: String, params: Value) -> Result<Value, MCPError> {
         let handlers = self.tool_handlers.lock().unwrap();
         if let Some(handler) = handlers.get(&tool) {
-            //TODO: create job, and execute it
             let job: JobTask<String,String> = JobTask::new(params,|params,sender| {
                 
             });
