@@ -23,7 +23,8 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use crate::support::job::JobTask;
+use crossbeam::channel::Sender;
+use crate::support::job::{JobTask, TaskEvent};
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -82,7 +83,7 @@ pub trait ServerProvider {
 }
 
 
-pub type ToolHandler = Box<dyn Fn(Value) -> Result<Value, MCPError> + Send>;
+pub type ToolHandler = Arc<Box<dyn Fn(Value,Sender<TaskEvent<String,i32>>) -> Result<Value, MCPError> + Send + Sync + 'static>>;
 
 #[derive(Clone)]
 pub struct Server {
@@ -205,7 +206,7 @@ impl Server {
 
     pub fn register_tool_handler<F>(&self, tool_name: String, handler: F) -> Result<(), MCPError>
     where
-        F: Fn(Value) -> Result<Value, MCPError> + Send + Sync + 'static,
+        F: Fn(Value,Sender<TaskEvent<String,i32>>) -> Result<Value, MCPError> + Send  + Sync + 'static,
     {
         //check if the tool exists
         if !self.config.tools.iter().any(|tool| tool.name == tool_name) {
@@ -225,7 +226,8 @@ impl Server {
             }
         };
 
-        let handler = Box::new(handler);
+        let handler: Arc<Box<dyn Fn(Value, Sender<TaskEvent<String, i32>>) -> Result<Value, MCPError> + Send + Sync>> =
+            Arc::new(Box::new(handler));
         handlers.insert(tool_name, handler);
 
         Ok(())
@@ -645,13 +647,23 @@ impl Server {
 
     fn execute_tool(&self, tool: String, params: Value) -> Result<Value, MCPError> {
         let handlers = self.tool_handlers.lock().unwrap();
-        if let Some(handler) = handlers.get(&tool) {
-            let job: JobTask<String,String> = JobTask::new(params,|params,sender| {
-                
+        if let Some(handler) = handlers.get(&tool).cloned() {
+            let job: JobTask<String,i32> = JobTask::new(params,move |params,sender| {
+                let result = handler(params,sender);
             });
-            
-            // let result = handler(params);
-            // return result;
+
+            while let Some(event) = job.recv() {
+                match event {
+                    TaskEvent::Data(v) => println!("{}", v),
+                    TaskEvent::Done => println!("Task completed"),
+                    TaskEvent::Cancelled => println!("Task cancelled"),
+                    TaskEvent::Error(e) => println!("Error: {}", e),
+                    TaskEvent::Panic(p) => println!("Panic: {}", p),
+                    TaskEvent::Progress(p) => {
+                        println!("Progress: {}", p.0);
+                    }
+                }
+            }
             Ok(Value::Null)
         } else {
             return Err(MCPError::Transport(format!(
