@@ -485,6 +485,7 @@ mod tests {
         support::definition::McpLayer,
         transport::{stdio, trace},
     };
+    use crate::support::job::TaskEvent;
     use crate::support::logging::setup_logging;
 
     #[derive(Clone, Default)]
@@ -537,8 +538,8 @@ mod tests {
             });
 
         let mut server = Server::new(config);
-        let _ = server.register_tool_handler("test_tool".to_string(), move |input| {
-            println!("Tool called with input: {:?}", input);
+        let _ = server.register_tool_handler("test_tool".to_string(), move |input,sender| {
+            let _ = sender.send(TaskEvent::Data("hello".to_string()));
             Ok(serde_json::json!({
                 "result": "hello mcp client",
             }))

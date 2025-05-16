@@ -5,6 +5,7 @@ use may::coroutine::{self, JoinHandle};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use serde_json::Value;
 
 #[derive(Debug)]
 pub enum TaskEvent<T, E> {
@@ -17,7 +18,7 @@ pub enum TaskEvent<T, E> {
 }
 
 #[derive(Clone)]
-struct JobTask<T: Send + 'static, E: Send + 'static>  {
+pub struct JobTask<T: Send + 'static, E: Send + 'static>  {
     is_cancelled: Arc<AtomicBool>,
     handle: Option<Arc<JoinHandle<()>>>,
     event_rx:  Receiver<TaskEvent<T, E>>,
@@ -26,9 +27,9 @@ struct JobTask<T: Send + 'static, E: Send + 'static>  {
 
 
 impl<T: Send + 'static, E: Send + 'static> JobTask<T, E>  {
-    pub fn new<F>(task: F) -> Self
+    pub fn new<F>(params: Value,task: F) -> Self
     where
-        F: FnOnce(Sender<TaskEvent<T, E>>) + Send + 'static,
+        F: FnOnce(Value,Sender<TaskEvent<T, E>>) + Send + 'static,
     {
         let is_cancelled = Arc::new(AtomicBool::new(false));
         let (event_tx, event_rx) = channel::unbounded();
@@ -46,7 +47,7 @@ impl<T: Send + 'static, E: Send + 'static> JobTask<T, E>  {
 
             // 执行任务并捕获 panic
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                task(sender.clone())
+                task(params,sender.clone())
             }));
 
             match result {
@@ -105,11 +106,12 @@ where
 mod tests {
     use std::thread;
     use irgo::defer;
-
+    use serde_json::json;
     use super::*;
     #[test]
     fn test_job_task() {
-        let mut job:JobTask<String,String> = JobTask::new(|sender| {
+        let params = json!({});
+        let mut job:JobTask<String,String> = JobTask::new(params,|params,sender| {
             println!("Hello, world!");
             defer!(println!("Goodbye, world!"));
 
