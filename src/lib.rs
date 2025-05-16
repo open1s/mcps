@@ -27,7 +27,7 @@ pub use support::definition::error::MCPError;
 use crate::support::logging::McpInterceptorLogger;
 
 pub fn init_log(){
-    let logger = McpInterceptorLogger::init();
+    let _logger = McpInterceptorLogger::init();
 }
 
 

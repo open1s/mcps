@@ -7,7 +7,7 @@ use crate::{
         server::build_server_request,
     },
     support::{
-        disruptor::{DisruptorFactory, DisruptorWriter}, logging::setup_logging, sessons::{SessionStore, SESSION_STORE}, ControlBus
+        disruptor::{DisruptorFactory, DisruptorWriter}, logging::setup_logging, sessons::{SESSION_STORE}, ControlBus
     },
     MCPError,
 };
@@ -299,12 +299,14 @@ impl Server {
                         }
                         //create and store the session
                         let mut session_id = "local".to_string();
-
                         if let Some(ctx) = ctx {
+                            
                             if let Some(session) = ctx.data.get(SESSION_ID_KEY) {
                                 session_id = session.to_string();
                                 SESSION_STORE.create_session(session_id, 60*30);
                             }
+                        }else {
+                            SESSION_STORE.create_session(session_id, 60*30);
                         } 
                     }
                     "ping" => {
@@ -643,6 +645,8 @@ impl Server {
     fn execute_tool(&self, tool: String, params: Value) -> Result<Value, MCPError> {
         let handlers = self.tool_handlers.lock().unwrap();
         if let Some(handler) = handlers.get(&tool) {
+            //TODO: create job, and execute it
+            
             let result = handler(params);
             return result;
         } else {
