@@ -2,7 +2,7 @@ use crate::{
     schema::{
         json_rpc::{mcp_from_value, mcp_json_param, mcp_param, mcp_to_value},
         schema::{
-            error_codes, CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
+            error_codes, CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, LoggingLevel, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
         },
         server::build_server_request,
     },
@@ -252,6 +252,23 @@ impl Server {
 
                     match serde_json::from_str::<JSONRPCMessage>(&data) {
                         Ok(message) => {
+                            //setup session if needed
+                            match ctx {
+                                None => {},
+                                Some(ref ss) => {
+                                    let session_id = ss.data.get(SESSION_ID_KEY);
+                                    if let Some(sid) = session_id {
+                                        //try find session
+                                        if let Some(session) = SESSION_STORE.get_session(sid) {
+                                           //find debug level
+                                           let debug_level = session.get_item("debug_level").unwrap();
+                                           let level = LoggingLevel::from(debug_level.as_str());
+                                           setup_logging(&level);
+                                        }
+                                    }
+                                }
+                            }
+
                             if let Err(err) = server.handle_message(ctx,message) {
                                 log::error!("handle_message failed: {}", err);
                             }
@@ -857,12 +874,12 @@ impl Server {
         let params: SetLevelParams = serde_json::from_value(params.clone())
             .map_err(|e| MCPError::Transport(format!("Invalid set level parameters: {}", e)))?;
         let level = params.level;
-        setup_logging(level);
+        setup_logging(&level);
 
         //get session id
-        let s = SESSION_STORE.get_session(session_id);
+        let s = SESSION_STORE.get_session(&session_id);
         if let Some(mut s) = s {
-            s.set_item("debug_level".to_string(),serde_json::to_value(1)?)
+            s.set_item("debug_level".to_string(),level.to_string());
         }
 
         Ok(Value::Null)

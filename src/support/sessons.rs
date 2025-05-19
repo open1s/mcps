@@ -3,11 +3,10 @@ use std::{collections::HashMap,sync::Arc};
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct SessionItem {
-    pub items: HashMap<String, Value>,
+    pub items: HashMap<String, String>,
     pub expires_at: DateTime<Utc>,
 }
 
@@ -19,11 +18,11 @@ impl SessionItem {
         }
     }
 
-    pub fn set_item(&mut self, key: String, value: Value) {
+    pub fn set_item(&mut self, key: String, value: String) {
         self.items.insert(key, value);
     }
 
-    pub fn get_item(&self, key: &str) -> Option<&Value> {
+    pub fn get_item(&self, key: &str) -> Option<&String> {
         self.items.get(key)
     }
 }
@@ -69,18 +68,18 @@ impl SessionStore {
         self.store.insert(id.clone(), SessionItem {expires_at: expires_at, items: HashMap::new()});
     }
 
-    pub fn set_session_value(&self, session_id: &str, key: String, value: Value) {
+    pub fn set_session_value(&self, session_id: &str, key: String, value: String) {
         if let Some(mut entry) = self.store.get_mut(session_id) {
             entry.set_item(key, value);
         }
     }
 
-    pub fn get_session(&self, session_id: String) -> Option<SessionItem> {
-        self.store.get(&session_id).and_then(|entry| {
+    pub fn get_session(&self, session_id: &String) -> Option<SessionItem> {
+        self.store.get(session_id).and_then(|entry| {
             if entry.expires_at > Utc::now() {
                 Some(entry.clone())
             } else {
-                self.store.remove(&session_id); // remove expired
+                self.store.remove(session_id); // remove expired
                 None
             }
         })

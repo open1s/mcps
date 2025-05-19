@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -854,6 +853,42 @@ pub enum LoggingLevel {
     Critical,
     Alert,
     Emergency,
+}
+
+impl ToString for LoggingLevel {
+    fn to_string(&self) -> String {
+        let str = match self { 
+            LoggingLevel::Info => "info",
+            LoggingLevel::Notice => {
+                "notice"
+            },
+            LoggingLevel::Warning => "warning",
+            LoggingLevel::Error => "error",
+            LoggingLevel::Critical => "critical",
+            LoggingLevel::Alert => "alert",
+            LoggingLevel::Emergency => "emergency",
+            LoggingLevel::Debug => "debug",
+        };
+
+        str.to_string()
+    }
+}
+
+impl From<&str> for LoggingLevel {
+    fn from(level_str: &str) -> Self {
+        let l = match level_str.to_lowercase().as_str() {
+            "debug" => Self::Debug,
+            "info" => Self::Info,
+            "error" => Self::Error,
+            "notice" => Self::Notice,
+            "warn" => Self::Warning,
+            "critical" => Self::Critical,
+            "alert" => Self::Alert,
+            "emergency" => Self::Emergency,
+            _ => Self::Info,
+        };
+        l
+    }
 }
 
 /// Parameters for set level request

@@ -94,7 +94,7 @@ impl Log for McpInterceptorLogger {
 }
 
 
-pub fn setup_logging(level: LoggingLevel){
+pub fn setup_logging(level: &LoggingLevel){
     let log_level = match level {
         LoggingLevel::Debug => log::LevelFilter::Debug,
         LoggingLevel::Info => log::LevelFilter::Info,

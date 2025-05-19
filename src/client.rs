@@ -610,9 +610,9 @@ mod tests {
         init_log();
         
         info!("Starting test");
-        setup_logging(LoggingLevel::Info);
+        setup_logging(&LoggingLevel::Info);
         info!("Starting test");
-        setup_logging(LoggingLevel::Alert);
+        setup_logging(&LoggingLevel::Alert);
         info!("Starting test");
     }
 }
