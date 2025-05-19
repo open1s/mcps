@@ -41,6 +41,7 @@ log = { version = "0.4", features = ["std"]}
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
+colored = "3"
 anyhow = {version = "1.0" }
 dashmap = {version = "6.1", features = ["serde"]}
 xxhash-rust = { version = "0",features = ["xxh3", "const_xxh3"] }
@@ -50,11 +51,12 @@ nbus = { version = "2.4" }
 bytes = {version = "1"}
 memmap2 = {version = "0.9"}
 may = "0.3.51"
+generator = "0.8"
 crossbeam = {version = "0.8"}
 once_cell = { version = "1.21"}
 ibuf = { version = "0.3"}
 ibag = { version = "0.3" }
-rioc = { version = "0.2" }
+rioc = { version = "0.2.11" }
 iconfig = { version = "0.1" }
 irgo = { version = "0.2"}
 imacro = { version = "0.4" }

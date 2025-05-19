@@ -1,5 +1,5 @@
 use disruptor::Producer;
-use log::info;
+use log::{info, warn};
 
 use crate::{client::{Client, ClientProvider}, server::Server, support::ControlBus};
 
@@ -43,8 +43,9 @@ impl ServerExecutor {
                 let envent = rx.try_recv();
                 match envent {
                     Ok(r) => {
-                        println!("!!! Received: {}", r);
+                        warn!("!!! Received: {}", r);
                         if r == 1 {
+                            let _ = server.stop();
                             break;
                         }
                     }
