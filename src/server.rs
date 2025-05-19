@@ -2,29 +2,28 @@ use crate::{
     schema::{
         json_rpc::{mcp_from_value, mcp_json_param, mcp_param, mcp_to_value},
         schema::{
-            error_codes, CallToolParams, CallToolResult, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
+            error_codes, CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
         },
         server::build_server_request,
     },
     support::{
-        disruptor::{DisruptorFactory, DisruptorWriter}, logging::setup_logging, sessons::{SESSION_STORE}, ControlBus
+        disruptor::{DisruptorFactory, DisruptorWriter}, jobman::JobManager, logging::setup_logging, sessons::SESSION_STORE, ControlBus
     },
     MCPError,
 };
 use chrono::Utc;
 use dashmap::DashMap;
 use disruptor::{Producer, Sequence};
-use ibag::iBag;
-use log::info;
-use rioc::{ChainContext, LayerChain, LayerResult, PayLoad, SharedLayer};
-use serde_json::Value;
+use ibag::{iBag};
+use log::{info};
+use rioc::{ChainContext, JobTask, LayerChain, LayerResult, PayLoad, SharedLayer, TaskEvent};
+use serde_json::{Value};
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Duration,
+    collections::HashMap,sync::{Arc, Mutex}, time::Duration
 };
-use crossbeam::channel::Sender;
-use crate::support::job::{JobTask, TaskEvent};
+use std::cell::RefCell;
+use crossbeam::channel::{Receiver, Sender};
+use crate::schema::schema::{AudioContent, CallToolResult, CancelledParams, EmbeddedResource, ImageContent, LoadType, ResourceContents};
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -83,7 +82,7 @@ pub trait ServerProvider {
 }
 
 
-pub type ToolHandler = Arc<Box<dyn Fn(Value,Sender<TaskEvent<String,i32>>) -> Result<Value, MCPError> + Send + Sync + 'static>>;
+pub type ToolHandler = Arc<Box<dyn Fn(Value,Sender<TaskEvent<(LoadType,String),i32>>,Receiver<String>,) -> Result<Value, MCPError> + Send + Sync + 'static>>;
 
 #[derive(Clone)]
 pub struct Server {
@@ -98,6 +97,7 @@ pub struct Server {
     next_request_id: i64,
     timeout_duration: Option<Duration>,
     state: ServerState,
+    job_manager: Arc<Mutex<RefCell<JobManager>>>,
 }
 
 impl Server {
@@ -115,6 +115,7 @@ impl Server {
             cached: Arc::new(Mutex::new(Vec::new())),
             timeout_duration: None,
             state: ServerState::Uninitialized,
+            job_manager: Arc::new(Mutex::new(RefCell::new(JobManager::new()))),
         }
     }
 
@@ -206,7 +207,7 @@ impl Server {
 
     pub fn register_tool_handler<F>(&self, tool_name: String, handler: F) -> Result<(), MCPError>
     where
-        F: Fn(Value,Sender<TaskEvent<String,i32>>) -> Result<Value, MCPError> + Send  + Sync + 'static,
+        F: Fn(Value,Sender<TaskEvent<(LoadType,String),i32>>,Receiver<String>) -> Result<Value, MCPError> + Send  + Sync + 'static,
     {
         //check if the tool exists
         if !self.config.tools.iter().any(|tool| tool.name == tool_name) {
@@ -226,7 +227,7 @@ impl Server {
             }
         };
 
-        let handler: Arc<Box<dyn Fn(Value, Sender<TaskEvent<String, i32>>) -> Result<Value, MCPError> + Send + Sync>> =
+        let handler: Arc<Box<dyn Fn(Value, Sender<TaskEvent<(LoadType,String), i32>>,Receiver<String>) -> Result<Value, MCPError> + Send + Sync>> =
             Arc::new(Box::new(handler));
         handlers.insert(tool_name, handler);
 
@@ -263,6 +264,140 @@ impl Server {
             });
 
         self.disruptor = Some(disruptor);
+
+
+        //start job manager
+        let mut notify_rx = self.notify.clone_rx();
+        let server = self.clone();
+        let job_manager = self.job_manager.clone();
+        std::thread::spawn(move || {
+            loop{
+                //server.job_manager.start();
+                let jobs = job_manager.lock().unwrap().borrow_mut().polling();
+
+                match jobs {
+                    Ok(gn) => {
+                        for payload in gn {
+                            match &payload.1 {
+                               LoadType::Text => {
+                                    let tool_result = CallToolResult {
+                                        is_error: Some(false),
+                                        content: vec![ToolResultContent::Text(TextContent {
+                                            r#type: "text".to_string(),
+                                            text: payload.2.data.unwrap(),
+                                            annotations: None,
+                                        })],
+                                    };
+                                    let response = JSONRPCResponse::new(
+                                        payload.0,
+                                        serde_json::to_value(tool_result).map_err(MCPError::Serialization).unwrap(),
+                                    );
+                                    let response = serde_json::to_string(&response).map_err(MCPError::Serialization).unwrap();
+
+                                    server.handle_outbound(Some(PayLoad {
+                                        data: Some(response),
+                                        ctx: payload.2.ctx,
+                                    })).expect("panic");
+                                }
+                               LoadType::Audio => {
+                                   let tool_result = CallToolResult {
+                                       is_error: Some(false),
+                                       content: vec![ToolResultContent::Audio(AudioContent {
+                                           r#type: "audio".to_string(),
+                                           data: payload.2.data.unwrap(),
+                                           annotations: None,
+                                           mime_type: "audio/mpeg".to_string(),
+                                       })],
+                                   };
+                                   let response = JSONRPCResponse::new(
+                                       payload.0,
+                                       serde_json::to_value(tool_result).map_err(MCPError::Serialization).unwrap(),
+                                   );
+                                   let response = serde_json::to_string(&response).map_err(MCPError::Serialization).unwrap();
+
+                                   server.handle_outbound(Some(PayLoad {
+                                       data: Some(response),
+                                       ctx: payload.2.ctx,
+                                   })).expect("panic");
+                               }
+                               LoadType::Image => {
+                                   let tool_result = CallToolResult {
+                                       is_error: Some(false),
+                                       content: vec![ToolResultContent::Image(ImageContent {
+                                           r#type: "image".to_string(),
+                                           data: payload.2.data.unwrap(),
+                                           annotations: None,
+                                           mime_type: "image/png".to_string(),
+                                       })],
+                                   };
+                                   let response = JSONRPCResponse::new(
+                                       payload.0,
+                                       serde_json::to_value(tool_result).map_err(MCPError::Serialization).unwrap(),
+                                   );
+                                   let response = serde_json::to_string(&response).map_err(MCPError::Serialization).unwrap();
+
+                                   server.handle_outbound(Some(PayLoad {
+                                       data: Some(response),
+                                       ctx: payload.2.ctx,
+                                   })).expect("panic");
+                               }
+                               LoadType::Embedded => {
+                                   let content = payload.2.data.unwrap();
+                                   let result  =  serde_json::from_str::<ResourceContents>(&content);
+                                   if  let Err(err) = result {
+                                       return Err(err);
+                                   }
+
+                                   let resource = result.unwrap();
+                                   let tool_result = CallToolResult {
+                                       is_error: Some(false),
+                                       content: vec![ToolResultContent::Resource(EmbeddedResource {
+                                           r#type: "resource".to_string(),
+                                           annotations: None,
+                                           resource,
+                                       })],
+                                   };
+
+                                   let response = JSONRPCResponse::new(
+                                       payload.0,
+                                       serde_json::to_value(tool_result).map_err(MCPError::Serialization).unwrap(),
+                                   );
+                                   let response = serde_json::to_string(&response).map_err(MCPError::Serialization).unwrap();
+
+                                   server.handle_outbound(Some(PayLoad {
+                                       data: Some(response),
+                                       ctx: payload.2.ctx,
+                                   })).expect("panic");
+                               }
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Error polling job manager: {}", e);
+                    }
+                }
+
+                match &mut notify_rx {
+                    Ok(reader) => {
+                        let event  = reader.try_recv();
+                        if let Ok(_) = event {
+                            break Ok(());
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+
+    pub fn stop(&self) -> Result<(), MCPError> {
+        let tx = self.notify.clone_tx();
+        tx.unwrap().publish(|e|{
+            *e = 1;
+        });
         Ok(())
     }
 
@@ -335,7 +470,7 @@ impl Server {
                             return Err(e);
                         }
 
-                        if let Err(e) = self.handle_tool_call(id, params) {
+                        if let Err(e) = self.handle_tool_call(ctx,id, params) {
                             log::error!("Failed to handle tools/call request: {}", e);
                         }
                     }
@@ -531,7 +666,7 @@ impl Server {
         Ok(())
     }
 
-    fn handle_tool_call(&self, id: RequestId, params: Option<Value>) -> Result<(), MCPError> {
+    fn handle_tool_call(&mut self, ctx: Option<ChainContext>, id: RequestId, params: Option<Value>) -> Result<(), MCPError> {
         let params = params.ok_or_else(|| {
             MCPError::Transport("Missing parameters in tools/call request".to_string())
         })?;
@@ -551,29 +686,8 @@ impl Server {
 
         let result = self.execute_tool(tool_name, tool_params);
         match result {
-            Ok(result) => {
-                //send the result back to the client
-                let tool_result = CallToolResult {
-                    is_error: Some(false),
-                    content: vec![ToolResultContent::Text(TextContent {
-                        r#type: "text".to_string(),
-                        text: serde_json::to_string_pretty(&result)
-                            .unwrap_or_else(|_| format!("{:?}", result)),
-                        annotations: None,
-                    })],
-                };
-
-                let response = JSONRPCResponse::new(
-                    id,
-                    serde_json::to_value(tool_result).map_err(MCPError::Serialization)?,
-                );
-                let response = serde_json::to_string(&response).map_err(MCPError::Serialization)?;
-                if let Err(e) = self.handle_outbound(Some(rioc::PayLoad {
-                    data: Some(response),
-                    ctx: None,
-                })) {
-                    log::error!("Failed to send tool call response: {}", e);
-                }
+            Ok(job) => {
+                self.job_manager.lock().unwrap().borrow_mut().add_job(id,(ctx,job))
             }
             Err(e) => {
                 let error = JSONRPCMessage::Error(JSONRPCError::new_with_details(
@@ -644,29 +758,14 @@ impl Server {
         Ok(())
     }
 
-    fn execute_tool(&self, tool: String, params: Value) -> Result<Value, MCPError> {
+    fn execute_tool(&self, tool: String, params: Value) -> Result<JobTask<(LoadType,String),i32,String>, MCPError> {
         let handlers = self.tool_handlers.lock().unwrap();
         if let Some(handler) = handlers.get(&tool).cloned() {
-            let job: JobTask<String,i32> = JobTask::new(params,move |params,sender| {
-                let _result = handler(params,sender);
+            let job: JobTask<(LoadType,String),i32,String> = JobTask::new(params,move |params,sender,receiver| {
+                let _result = handler(params,sender,receiver);
             });
 
-            //need process session state, need use ctx to read get such info
-            //self.handle_outbound();
-
-            while let Some(event) = job.recv() {
-                match event {
-                    TaskEvent::Data(v) => println!("{}", v),
-                    TaskEvent::Done => println!("Task completed"),
-                    TaskEvent::Cancelled => println!("Task cancelled"),
-                    TaskEvent::Error(e) => println!("Error: {}", e),
-                    TaskEvent::Panic(p) => println!("Panic: {}", p),
-                    TaskEvent::Progress(p) => {
-                        println!("Progress: {}", p.0);
-                    }
-                }
-            }
-            Ok(Value::Null)
+            return Ok(job);
         } else {
             return Err(MCPError::Transport(format!(
                 "No handler found for tool: {}",
@@ -717,7 +816,18 @@ impl Server {
         });
     }
 
-    fn handle_cancelled(&self, _params: Option<Value>) -> Result<Value, MCPError> {
+    fn handle_cancelled(&self, params: Option<Value>) -> Result<Value, MCPError> {
+        let params = params.ok_or_else(|| {
+            MCPError::Transport("Missing parameters in tools/call request".to_string())
+        })?;
+
+        //parse the parameters as CallToolParams
+        let call_params: CancelledParams = serde_json::from_value(params.clone())
+            .map_err(|e| MCPError::Transport(format!("Invalid Cancellation parameters: {}", e)))?;
+
+        let request_id = call_params.request_id;
+        self.job_manager.lock().unwrap().borrow_mut().cancel_job(request_id);
+
         Ok(Value::Null)
     }
 

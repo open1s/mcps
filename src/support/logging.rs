@@ -1,8 +1,7 @@
 use std::{fs::OpenOptions, sync::{Arc, Mutex}};
-use log::{LevelFilter, Log, Metadata, Record};
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use crate::schema::schema::LoggingLevel;
 use std::io::Write;
-
 pub trait Appender: Send + Sync{
     fn append(&self, record: &Record);
 }
@@ -11,7 +10,22 @@ pub trait Appender: Send + Sync{
 pub struct ConsoleAppender;
 impl Appender for ConsoleAppender {
     fn append(&self, record: &Record) {
-        println!("[{}] {} -> {}", record.level(),record.metadata().target(), record.args());
+        let color_code = match record.level() {
+            Level::Error => "\x1b[31m",    // 红色
+            Level::Warn  => "\x1b[33m",    // 黄色
+            Level::Info  => "\x1b[90m",    // 绿色
+            Level::Debug => "\x1b[90m",    // 蓝色
+            Level::Trace => "\x1b[90m",    // 灰色
+        };
+
+        let reset = "\x1b[0m";
+        println!(
+            "{}[{}] {} {}",
+            color_code,
+            record.level(),
+            format!("{} -> {}", record.metadata().target(), record.args()),
+            reset
+        );
     }
 }
 
@@ -59,7 +73,7 @@ impl McpInterceptorLogger {
         let logger = McpInterceptorLogger::new(appenders, LevelFilter::Info);
 
         log::set_boxed_logger(Box::new(logger)).unwrap();
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(log::LevelFilter::Warn);
     }
 }
 

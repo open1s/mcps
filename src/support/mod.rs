@@ -22,5 +22,5 @@ pub mod control_bus;
 pub mod shared_memory;
 pub mod logging;
 pub mod sessons;
-pub mod job;
+pub mod jobman;
 pub use control_bus::ControlBus;

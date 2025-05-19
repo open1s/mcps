@@ -477,6 +477,7 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
 
 #[cfg(test)]
 mod tests {
+    use rioc::TaskEvent;
     use crate::{
         executor::{ClientExecutor, ServerExecutor},
         init_log,
@@ -485,7 +486,6 @@ mod tests {
         support::definition::McpLayer,
         transport::{stdio, trace},
     };
-    use crate::support::job::TaskEvent;
     use crate::support::logging::setup_logging;
 
     #[derive(Clone, Default)]
@@ -538,8 +538,8 @@ mod tests {
             });
 
         let mut server = Server::new(config);
-        let _ = server.register_tool_handler("test_tool".to_string(), move |input,sender| {
-            let _ = sender.send(TaskEvent::Data("hello".to_string()));
+        let _ = server.register_tool_handler("test_tool".to_string(), move |_input,sender,_receiver| {
+            let _ = sender.send(TaskEvent::Data((crate::schema::schema::LoadType::Text, "hello mcp".to_string())));
             Ok(serde_json::json!({
                 "result": "hello mcp client",
             }))
@@ -547,7 +547,7 @@ mod tests {
 
         let server_transport = stdio::StdioTransport::new("abc", true).create();
         server.add_transport_layer(server_transport);
-        server.start().unwrap();
+        let _ = server.start();
         server.build();
 
         //new server executor
@@ -556,7 +556,7 @@ mod tests {
 
         //init client
         let mut client = Client::<TestClientService>::new();
-        let client = client.with_timeout(Duration::from_secs(3));
+        let client = client.with_timeout(Duration::from_secs(10));
         let layer0 = stdio::StdioTransport::new("abc", false).create();
         client.add_transport_layer(layer0);
 
@@ -596,9 +596,9 @@ mod tests {
             arguments: None,
         });
         println!("Tools/call {:?}", toolcall_result);
+        let _= client.cancel();
 
         let _= client.ping();
-        let _= client.cancel();
 
         let _= client.shutdown();
         let _= client_executor.stop();

@@ -11,6 +11,15 @@ pub const JSONRPC_VERSION: &str = "2.0";
 /// MCP session identifier key in the context data 
 pub const SESSION_ID_KEY: &str = "sessionId";
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadType {
+    Text = 1,
+    Audio = 2,
+    Image = 3,
+    Embedded = 4,
+}
+
 
 /// Standard JSON-RPC error codes
 pub mod error_codes {
