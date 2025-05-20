@@ -2,6 +2,15 @@ use std::{fs::OpenOptions, sync::{Arc, Mutex}};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use crate::schema::schema::LoggingLevel;
 use std::io::Write;
+use std::sync::LazyLock;
+use crossbeam::channel::{bounded, Receiver, Sender};
+
+pub static LOG_CHANNEL: LazyLock<(Sender<String>,Receiver<String>)> = LazyLock::new(|| {
+    let (tx, rx) = bounded::<String>(10);
+    (tx, rx)
+});
+
+
 pub trait Appender: Send + Sync{
     fn append(&self, record: &Record);
 }
@@ -62,7 +71,7 @@ pub struct McpInterceptorLogger {
 
 impl McpInterceptorLogger {
     pub fn new(appenders: Vec<Arc<dyn Appender>>, level_filter: LevelFilter) -> Self {
-        Self { appenders, level_filter }
+        Self { appenders, level_filter}
     }
 
     pub fn init()  {
@@ -73,7 +82,11 @@ impl McpInterceptorLogger {
         let logger = McpInterceptorLogger::new(appenders, LevelFilter::Info);
 
         log::set_boxed_logger(Box::new(logger)).unwrap();
-        log::set_max_level(log::LevelFilter::Warn);
+        log::set_max_level(log::LevelFilter::Info);
+    }
+
+    pub fn set_level(l: log::LevelFilter){
+        log::set_max_level(l);
     }
 }
 
@@ -84,6 +97,9 @@ impl Log for McpInterceptorLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            // let log = format!("[{}] {} -> {}", record.level(),record.metadata().target(), record.args());
+            // let _ =  LOG_CHANNEL.0.try_send(log);
+
             for appender in &self.appenders {
                 appender.append(record);
             }

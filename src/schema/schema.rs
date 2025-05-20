@@ -842,7 +842,7 @@ pub struct SetLevelRequest {
     pub params: SetLevelParams,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash,PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LoggingLevel {
     Debug,
