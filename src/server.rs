@@ -2,9 +2,9 @@ use crate::{
     schema::{
         json_rpc::{mcp_from_value, mcp_json_param, mcp_param, mcp_to_value},
         schema::{
-            error_codes, CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, LoggingLevel, RequestId, ServerCapabilities, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
+            error_codes, CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, LoggingLevel, LoggingMessageNotification, LoggingMessageParams, RequestId, ServerCapabilities, ServerNotification, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
         },
-        server::build_server_request,
+        server::{build_server_notification, build_server_request},
     },
     support::{
         disruptor::{DisruptorFactory, DisruptorWriter}, jobman::JobManager, logging::setup_logging, sessons::SESSION_STORE, ControlBus
@@ -15,15 +15,17 @@ use chrono::Utc;
 use dashmap::DashMap;
 use disruptor::{Producer, Sequence};
 use ibag::{iBag};
-use log::{info};
+use log::{error, info};
 use rioc::{ChainContext, JobTask, LayerChain, LayerResult, PayLoad, SharedLayer, TaskEvent};
-use serde_json::{Value};
+use serde_json::{json, Value};
 use std::{
     collections::HashMap,sync::{Arc, Mutex}, time::Duration
 };
 use std::cell::RefCell;
 use crossbeam::channel::{Receiver, Sender};
+use libc::printf;
 use crate::schema::schema::{AudioContent, CallToolResult, CancelledParams, EmbeddedResource, ImageContent, LoadType, ResourceContents};
+use crate::support::sessons::{get_current_session, set_session_id, SessionItem};
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -241,7 +243,6 @@ impl Server {
             ));
         }
         self.is_initialized = true;
-
         let mut server = self.clone();
         let disruptor =
             DisruptorFactory::create(move |e: &PayLoad, _seq: Sequence, _end_of_patch: bool| {
@@ -261,9 +262,11 @@ impl Server {
                                         //try find session
                                         if let Some(session) = SESSION_STORE.get_session(sid) {
                                            //find debug level
-                                           let debug_level = session.get_item("debug_level").unwrap();
-                                           let level = LoggingLevel::from(debug_level.as_str());
-                                           setup_logging(&level);
+                                           let debug_level = session.get_item("debug_level");
+                                           if  let Some(debug_level) = debug_level {
+                                               let level = LoggingLevel::from(debug_level.as_str());
+                                               setup_logging(&level);
+                                           }
                                         }
                                     }
                                 }
@@ -409,6 +412,72 @@ impl Server {
         Ok(())
     }
 
+    pub fn send_log(&self,level: LoggingLevel, message: &str) {
+        //get current session
+        let mut max_level = LoggingLevel::Info;
+        if let Some(ref mut s) = Self::current_session() {
+            let s = s.get_item("debug_level");
+            if let Some(s) = s {
+                max_level = LoggingLevel::from(s.as_str());
+            }
+        }else {
+            return;
+        }
+
+        if level <  max_level {
+            return;
+        }
+
+        let log_message = LoggingMessageNotification::new(LoggingMessageParams{
+            level,
+            logger: Some("Mcp Server 1.0".to_string()),
+            data: json!(message),
+        });
+
+        let notify = ServerNotification::LoggingMessageNotification(log_message);
+        let notify = build_server_notification(notify);
+        let notify = serde_json::to_string(&notify).map_err(MCPError::Serialization);
+        if  let Err(_) = notify {
+            return;
+        }
+        let  notify = notify.unwrap();
+        if let Err(_) = self.handle_outbound(Some(rioc::PayLoad {
+            data: Some(notify),
+            ctx: None,
+        })) {}
+    }
+
+    pub fn info(&self, message: &str) {
+        self.send_log(LoggingLevel::Info, message);
+    }
+
+    pub fn debug(&self, message: &str) {
+        self.send_log(LoggingLevel::Debug, message);
+    }
+
+    pub fn error(&self, message: &str) {
+        self.send_log(LoggingLevel::Error, message);
+    }
+
+    pub fn warning(&self, message: &str) {
+        self.send_log(LoggingLevel::Warning, message);
+    }
+
+    pub fn notice(&self, message: &str) {
+        self.send_log(LoggingLevel::Warning, message);
+    }
+
+    pub fn critical(&self, message: &str) {
+        self.send_log(LoggingLevel::Critical, message);
+    }
+
+    pub fn emergency(&self, message: &str) {
+        self.send_log(LoggingLevel::Emergency, message);
+    }
+
+    pub fn alert(&self, message: &str) {
+        self.send_log(LoggingLevel::Alert, message);
+    }
 
     pub fn stop(&self) -> Result<(), MCPError> {
         let tx = self.notify.clone_tx();
@@ -421,6 +490,7 @@ impl Server {
     fn publish(&self, message: PayLoad) {
         self.disruptor.clone().unwrap().publish(|e| {
             e.data = message.data;
+            e.ctx = message.ctx;
         });
     }
 
@@ -445,6 +515,17 @@ impl Server {
                 let id = req.id.clone();
                 let method = req.method.clone();
                 let params = req.params.clone();
+
+                //restore session id if exist
+                let mut session_id = "local".to_string();
+                if let Some(ref ctx) = ctx {
+                    if let Some(session) = ctx.data.get(SESSION_ID_KEY) {
+                        session_id = session.to_string();
+                        set_session_id(session_id.clone());
+                    }
+                }else{
+                    set_session_id(session_id.clone());
+                }
 
                 match method.as_str() {
                     "initialize" => {
@@ -482,6 +563,7 @@ impl Server {
                     }
                     "tools/call" => {
                         info!("Received tools/call request");
+                        self.info("begin handle log");
                         if let Err(e) = self.check_state(id.clone()) {
                             log::error!("Failed to check state: {}", e);
                             return Err(e);
@@ -514,13 +596,6 @@ impl Server {
                             return Err(e);
                         }
 
-                        let mut session_id = "local".to_string();
-
-                        if let Some(ctx) = ctx {
-                            if let Some(session) = ctx.data.get(SESSION_ID_KEY) {
-                                session_id = session.to_string();
-                            }
-                        }
                         if let Err(e) = self.handle_set_level(id,session_id, params) {
                             log::error!("Failed to handle logging/setLevel request: {}", e);
                         }
@@ -622,7 +697,7 @@ impl Server {
 
         let capabilities = ServerCapabilities {
             experimental: None,
-            logging: None,
+            logging: Some(Value::Bool(false)),
             prompts: None,
             resources: None,
             tools: if !self.config.tools.is_empty() {
@@ -883,5 +958,11 @@ impl Server {
         }
 
         Ok(Value::Null)
+    }
+
+    pub fn current_session() -> Option<SessionItem> {
+        let sid = get_current_session();
+        let s = SESSION_STORE.get_session(&sid);
+        return s;
     }
 }

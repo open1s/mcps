@@ -15,12 +15,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use super::{json_rpc::mcp_param, schema::{JSONRPCNotification, JSONRPCRequest, ListRootsRequest, RequestId, ServerNotification, ServerRequest}};
+use super::{json_rpc::mcp_param, schema::{JSONRPCNotification, JSONRPCRequest, ListRootsRequest, LoggingMessageNotification, LoggingMessageParams, RequestId, ServerNotification, ServerRequest}};
 
 impl ListRootsRequest {
     pub fn new() -> Self {
         Self {
             method: "roots/list".to_string(),
+        }
+    }
+}
+
+impl LoggingMessageNotification{
+    pub fn new(params : LoggingMessageParams) -> Self {
+        Self {
+            method: "notifications/message".to_string(),
+            params,
         }
     }
 }

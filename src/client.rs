@@ -31,6 +31,7 @@ pub trait ClientProvider {
     fn client_ping_response(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError>;
     fn client_list_roots(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError>;
     fn client_sampling_message(&self, id: RequestId, _params: Option<Value>) -> Result<(), MCPError>;
+    fn client_logs(&self,params: Option<Value>) -> Result<(), MCPError>;
 }
 
 
@@ -113,7 +114,7 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
     fn handle_message(&mut self, response: JSONRPCMessage) -> Result<(), MCPError> {
         match &response {
             JSONRPCMessage::Response(_) => {
-                self.cached.lock().unwrap().push(response);
+                let _ = self.cached_response(response);
                 Ok(())
             }
             JSONRPCMessage::Request(req) => {
@@ -143,8 +144,9 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
 
                 Ok(())
             }
-            JSONRPCMessage::Notification(_) => {
-                let _ = self.cached_response(response);
+            JSONRPCMessage::Notification(params) => {
+                let params = params.params.clone();
+                let _ = self.provider.client_logs(params);
                 Ok(())
             }
             JSONRPCMessage::Error(_) => {
@@ -477,6 +479,7 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
 
 #[cfg(test)]
 mod tests {
+    use log::warn;
     use rioc::TaskEvent;
     use crate::{
         executor::{ClientExecutor, ServerExecutor},
@@ -486,7 +489,8 @@ mod tests {
         support::definition::McpLayer,
         transport::{stdio, trace},
     };
-    use crate::support::logging::setup_logging;
+    use crate::schema::schema::LoggingMessageParams;
+    use crate::support::logging::{setup_logging};
 
     #[derive(Clone, Default)]
     pub struct TestClientService;
@@ -501,6 +505,17 @@ mod tests {
         }
 
         fn client_sampling_message(&self, _id: RequestId, _params: Option<Value>) -> Result<(), MCPError> {
+            Ok(())
+        }
+
+        fn client_logs(&self, params: Option<Value>) -> Result<(), MCPError> {
+            let params = serde_json::from_value::<LoggingMessageParams>(
+                params.unwrap()
+            );
+
+            if let Ok(message) = params {
+                warn!("Log notification: {:?}", serde_json::to_string(&message.data));
+            }
             Ok(())
         }
     }
@@ -556,7 +571,7 @@ mod tests {
 
         //init client
         let mut client = Client::<TestClientService>::new();
-        let client = client.with_timeout(Duration::from_secs(10));
+        let client = client.with_timeout(Duration::from_secs(2));
         let layer0 = stdio::StdioTransport::new("abc", false).create();
         client.add_transport_layer(layer0);
 
@@ -568,7 +583,11 @@ mod tests {
         let mut client_executor = ClientExecutor::new();
         let _ = client_executor.start(client.clone());
 
-        let init_result = client.initialize().unwrap();
+        let init_result = client.initialize();
+        if let Err(err) = init_result {
+            return;
+        }
+        let init_result = init_result.unwrap();
 
         if let Some(server_info) = init_result.get("serverInfo") {
             if let (Some(server_name), Some(server_version), Some(protocol_version)) = (
@@ -584,6 +603,9 @@ mod tests {
                 );
             }
         }
+
+        //set level
+        client.set_log_level(LoggingLevel::Info);
 
         // list tools
         let list_tool_result = client.list_tool(Some("0".to_string())).unwrap();
@@ -608,11 +630,11 @@ mod tests {
     #[test]
     pub fn test_setup_logging(){
         init_log();
-        
         info!("Starting test");
         setup_logging(&LoggingLevel::Info);
         info!("Starting test");
-        setup_logging(&LoggingLevel::Alert);
+        setup_logging(&LoggingLevel::Warning);
         info!("Starting test");
+        warn!("Starting test>");
     }
 }
