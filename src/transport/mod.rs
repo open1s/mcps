@@ -16,4 +16,4 @@
 // THE SOFTWARE.
 pub mod stdio;
 pub mod trace;
-// mod http_sse;
+pub mod httpstream;
