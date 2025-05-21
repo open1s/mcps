@@ -35,16 +35,17 @@ pub fn init_log(){
 mod tests {
 
     use iconfig;
-    use crate::config::transport_config::TransportConfig;
+
+    use crate::config::transport_config::HttpTransportConfig;
 
     #[test]
    fn test_load_application_config() {
       let config = iconfig::load().unwrap();
 
-      let transport: TransportConfig = config.resolve_prefix("transport").unwrap();
+      let transport: HttpTransportConfig = config.resolve_prefix("transport").unwrap();
       println!("{:?}", transport);
 
-      let transport = config.resolve_prefix::<TransportConfig>("transport").unwrap();
+      let transport = config.resolve_prefix::<HttpTransportConfig>("transport").unwrap();
       println!("{:?}", transport);
    }
 }

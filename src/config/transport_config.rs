@@ -7,8 +7,10 @@
 ///
 
 #[derive(Debug,serde::Deserialize)]
-pub struct TransportConfig {
-    pub r#type : String,
+pub struct HttpTransportConfig {
     pub port : u16,
-    pub address : String
+    pub ip_address : String,
+    pub enable_tls: bool,
+    pub cert_file: Option<String>,
+    pub key_file: Option<String>,
 }
