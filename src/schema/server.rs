@@ -15,6 +15,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use serde_json::Value;
+use crate::schema::schema::{EmptyResult, JSONRPCError};
 use super::{json_rpc::mcp_param, schema::{JSONRPCNotification, JSONRPCRequest, ListRootsRequest, LoggingMessageNotification, LoggingMessageParams, RequestId, ServerNotification, ServerRequest}};
 
 impl ListRootsRequest {
@@ -30,6 +32,15 @@ impl LoggingMessageNotification{
         Self {
             method: "notifications/message".to_string(),
             params,
+        }
+    }
+}
+
+impl EmptyResult {
+    pub fn new() -> Self {
+        EmptyResult{
+            _meta: None,
+            extra: None,
         }
     }
 }
@@ -97,6 +108,14 @@ pub fn build_server_notification(param: ServerNotification) -> JSONRPCNotificati
 }
 
 
+pub fn build_server_error(
+    id: RequestId,
+    code: i32,
+    message: String,
+    data: Option<Value>,
+)  -> JSONRPCError {
+    JSONRPCError::new_with_details(id, code,message,data)
+}
 
 
 
