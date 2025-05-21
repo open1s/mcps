@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crate::schema::{client::{build_client_notification, build_client_request}, schema::{LoggingLevel, SetLevelParams, SetLevelRequest}};
+use crate::schema::{client::{build_client_notification, build_client_request}, schema::{ListToolsResult, LoggingLevel, SetLevelParams, SetLevelRequest}};
 use crate::schema::json_rpc::mcp_json_param;
 use crate::schema::schema::{
     CallToolParams, CallToolRequest, ClientNotification, Cursor, InitializedNotification,
@@ -264,7 +264,7 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
         }
     }
 
-    pub fn list_tool(&mut self, cursor: Option<Cursor>) -> Result<Value, MCPError> {
+    pub fn list_tool(&mut self, cursor: Option<Cursor>) -> Result<ListToolsResult, MCPError> {
         let list_tool_req = ListToolsRequest::new(Some(PaginatedParams { cursor }));
 
         let req = ClientRequest::ListTools(list_tool_req);
@@ -283,7 +283,9 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
         match response {
             JSONRPCMessage::Response(resp) => {
                 assert!(resp.id == request_id);
-                Ok(resp.result)
+
+                let result = serde_json::from_value::<ListToolsResult>(resp.result);
+                result.map_err(|e| MCPError::Protocol(format!("Failed to parse ListToolsResult: {:?}", e)))
             }
             JSONRPCMessage::Error(error) => Err(MCPError::Protocol(format!("Error: {:?}", error))),
             _ => Err(MCPError::Protocol("Invalid response".to_string())),
@@ -549,7 +551,7 @@ mod tests {
                     properties: None,
                     required: None,
                 },
-                description: None,
+                description: Some("hello mcp".to_string()),
             });
 
         let mut server = Server::new(config);
@@ -609,9 +611,7 @@ mod tests {
 
         // list tools
         let list_tool_result = client.list_tool(Some("0".to_string())).unwrap();
-        if let Some(tools) = list_tool_result.get("tools") {
-            println!("Tools: {:?}", tools);
-        }
+        println!("Tools/list {:?}", list_tool_result);
 
         let toolcall_result = client.call_tool(CallToolParams {
             name: "test_tool".to_string(),
