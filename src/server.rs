@@ -2,7 +2,7 @@ use crate::{
     schema::{
         json_rpc::{mcp_from_value, mcp_json_param, mcp_param, mcp_to_value},
         schema::{
-            error_codes, CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, LoggingLevel, LoggingMessageNotification, LoggingMessageParams, RequestId, ServerCapabilities, ServerNotification, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
+            CallToolParams, EmptyResult, Implementation, InitializeParams, InitializeResult, JSONRPCError, JSONRPCMessage, JSONRPCResponse, ListRootsRequest, ListToolsResult, LoggingLevel, LoggingMessageNotification, LoggingMessageParams, RequestId, ServerCapabilities, ServerNotification, ServerRequest, SetLevelParams, TextContent, Tool, ToolResultContent, ToolsCapability, LATEST_PROTOCOL_VERSION, SESSION_ID_KEY
         },
         server::{build_server_notification, build_server_request},
     },
@@ -15,16 +15,16 @@ use chrono::Utc;
 use dashmap::DashMap;
 use disruptor::{Producer, Sequence};
 use ibag::{iBag};
-use log::{error, info};
+use log::{info};
 use rioc::{ChainContext, JobTask, LayerChain, LayerResult, PayLoad, SharedLayer, TaskEvent};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,sync::{Arc, Mutex}, time::Duration
+    collections::HashMap, sync::{Arc, Mutex}, time::Duration
 };
 use std::cell::RefCell;
 use crossbeam::channel::{Receiver, Sender};
-use libc::printf;
-use crate::schema::schema::{AudioContent, CallToolResult, CancelledParams, EmbeddedResource, ImageContent, LoadType, ResourceContents};
+use crate::schema::schema::{AudioContent, CallToolResult, CancelledParams, EmbeddedResource, ImageContent, LoadType, ResourceContents,error_codes};
+use crate::schema::server::build_server_error;
 use crate::support::sessons::{get_current_session, set_session_id, SessionItem};
 
 #[derive(Clone)]
@@ -530,8 +530,9 @@ impl Server {
                 match method.as_str() {
                     "initialize" => {
                         info!("Received initialize request");
-                        if let Err(e) = self.handle_initialize(id, params) {
+                        if let Err(e) = self.handle_initialize(id.clone(), params) {
                             log::error!("Failed to handle initialize request: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Failed to handle initialize request".to_string(),None);
                         }
                         //create and store the session
                         let mut session_id = "local".to_string();
@@ -554,11 +555,14 @@ impl Server {
                         info!("Received tools/list request");
                         if let Err(e) = self.check_state(id.clone()) {
                             log::error!("Failed to check state: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Cannot list tools at current state.  Please initialize the session first".to_string(),None);
+                        
                             return Err(e);
                         }
 
-                        if let Err(e) = self.handle_list_tools(id, params) {
+                        if let Err(e) = self.handle_list_tools(id.clone(), params) {
                             log::error!("Failed to handle tools/list request: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Failed to list tools".to_string(),None);
                         }
                     }
                     "tools/call" => {
@@ -566,11 +570,13 @@ impl Server {
                         self.info("begin handle log");
                         if let Err(e) = self.check_state(id.clone()) {
                             log::error!("Failed to check state: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Cannot list tools at current state.  Please initialize the session first".to_string(),None);
                             return Err(e);
                         }
 
-                        if let Err(e) = self.handle_tool_call(ctx,id, params) {
+                        if let Err(e) = self.handle_tool_call(ctx,id.clone(), params) {
                             log::error!("Failed to handle tools/call request: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Failed to call tool".to_string(),None);
                         }
                     }
                     "shutdown" => {
@@ -593,6 +599,7 @@ impl Server {
                         info!("Received logging/setLevel request");
                         if let Err(e) = self.check_state(id.clone()) {
                             log::error!("Failed to check state: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Cannot set logging level at current state.  Please initialize the session first".to_string(),None);
                             return Err(e);
                         }
 
@@ -602,8 +609,9 @@ impl Server {
                     }
                     _ => {
                         info!("Received unsupported method: {}", method);
-                        if let Err(e) = self.handle_unsupported(id, params) {
+                        if let Err(e) = self.handle_unsupported(id.clone(), params) {
                             log::error!("Failed to handle unsupported method: {}", e);
+                            self.response_with_error(id,error_codes::INVALID_REQUEST, "Unsupported method".to_string(),None);
                         }
                     }
                 }
@@ -956,10 +964,40 @@ impl Server {
         if let Some(mut s) = s {
             s.set_item("debug_level".to_string(),level.to_string());
         }
+        
+        //response empty 
+        let result = EmptyResult::new();
+        let response = JSONRPCResponse::new(id, serde_json::json!(result));
+
+        //handle outbound
+        let response = serde_json::to_string(&response).map_err(MCPError::Serialization)?;
+        if let Err(e) = self.handle_outbound(Some(rioc::PayLoad {
+            data: Some(response),
+            ctx: None,
+        })) {
+            log::error!("Failed to send empty response: {}", e);
+        }
+
 
         Ok(Value::Null)
     }
 
+    fn response_with_error(&self,
+                           id: RequestId,
+                           code: i32,
+                           message: String,
+                           data: Option<Value>){
+        let error = build_server_error(id,code,message, data);
+        let error = serde_json::to_string(&error).map_err(MCPError::Serialization);
+        if  let Err(_) = error {
+            return;
+        }
+        let  error = error.unwrap();
+        if let Err(_) = self.handle_outbound(Some(rioc::PayLoad {
+            data: Some(error),
+            ctx: None,
+        })) {}
+    }
     pub fn current_session() -> Option<SessionItem> {
         let sid = get_current_session();
         let s = SESSION_STORE.get_session(&sid);

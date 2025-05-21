@@ -178,7 +178,7 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
                 if result.is_ok() {
                     return result;
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(50));
             }
         } else {
             let timeout_duration = self.timeout_duration.unwrap();
@@ -193,7 +193,7 @@ impl <T: ClientProvider + Default + Clone + Send + 'static> Client<T> {
                 // Need polling for data, not sleeping
                 // This is a hack, but it works for now
                 // maybe use wait for notify?
-                std::thread::sleep(Duration::from_millis(300));
+                std::thread::sleep(Duration::from_millis(50));
             }
             return Err(MCPError::Transport("Timeout".to_string()));
         }
@@ -514,7 +514,7 @@ mod tests {
             );
 
             if let Ok(message) = params {
-                warn!("Log notification: {:?}", serde_json::to_string(&message.data));
+                warn!("[FROM SERVER]: {}", serde_json::to_string_pretty(&message.data).unwrap());
             }
             Ok(())
         }
@@ -584,7 +584,7 @@ mod tests {
         let _ = client_executor.start(client.clone());
 
         let init_result = client.initialize();
-        if let Err(err) = init_result {
+        if let Err(_) = init_result {
             return;
         }
         let init_result = init_result.unwrap();
